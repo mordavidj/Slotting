@@ -58,6 +58,8 @@ def level():
     pf_norm = slotting(norm, [48], 'LeVel-normal')
     pf_sub = slotting(sub, [48], 'LeVel-sub')
 
+    pf2 = continuous_slotting(hashkey, [48, 32], 'TruVision_continuous')
+
     norm_lst = pf_norm[0].list_items()
     sub_lst = pf_sub[0].list_items()
     
@@ -73,6 +75,11 @@ def level():
     for i in sub_lst:
         if i not in norm_lst:
             print(i)
+
+def level_continuous():
+    hashkey = load_powerBI_hashkey('LeVel Optimization Hashkey.csv')
+
+    pf2 = continuous_slotting(hashkey, [48, 32], 'TruVision_continuous')
 
 def nuskin():
     hashkey = load_powerBI_hashkey('nuskin_hashkey.csv')
@@ -99,13 +106,14 @@ def truvision():
     print(hashkey['order_number'].count())
 
     pf = slotting(hashkey, pfs, 'TruVision')
+    pf2 = continuous_slotting(hashkey, [48, 32], 'TruVision_continuous')
 
 def main():
-    #level()
+    level_continuous()
     #waldo()
     #min_max_from_hashkey('do')
     #nuskin()
-    truvision()
+    #truvision()
 
 
 def test():

@@ -197,9 +197,13 @@ def continuous_slotting(hashkey, pf, cust):
 
     item_ids = set()
     for index, row in order_count.iterrows():
-        
+        for i in index.split(';'):
+            item_ids.add(i)
+    items_df = pd.DataFrame(item_ids, columns = ['item_id']).sort_values('item_id').set_index('item_id')
 
-    hashkey_count = hashkey.hashkey.value_counts().to_frame()
+    items_df['used'] = False
+    print(items_df)
+
     print(order_count)
 
     #case_info = pd.read_excel('../../../Documents/Master Case info.xlsx',
@@ -208,13 +212,16 @@ def continuous_slotting(hashkey, pf, cust):
     top = []
     pickfaces = []
     ord_sum = order_count.order_count.sum()
-    
+    backup = []
+    configs = 0
+
     # loop through each pickface number and get those top X items
     for p in range(len(pf)):
-        configs = 0
+        
         # each pickface is stored in its own dataframe
         top.append(pd.DataFrame(columns = ['item_id', 'orders', 'order_configs']))
-        backup = []
+        if backup:
+            pass
 
         for ind, row in order_count.iterrows():
             items = ind.split(';')
@@ -222,13 +229,13 @@ def continuous_slotting(hashkey, pf, cust):
             # if there aren't enough spaces to hold the next order configuration, store it and skip for now
             if len(items) > (pf[p] - len(top[p])):
                 for i in items:
-                    backup.append([i, row['order_count']])
+                    backup.append([i, row['order_count'], (configs, row['order_count'])])
                 
+                configs += 1
                 continue
 
             # track if order configuration has been accounted for
             order_count.at[ind, 'visited'] = True
-            h2 = []
 
             for i in items:
                 # if there are still open slots...
