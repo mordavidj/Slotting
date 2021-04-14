@@ -48,7 +48,7 @@ class Pickface():
         return items
 
     def to_csv(self):
-        with open(f'{self.cust}-{self.bays * self.bay_cols * self.bay_rows}_slots.csv', 'w', newline='') as f:
+        with open(f'data/{self.cust}-{self.bays * self.bay_cols * self.bay_rows}_slots.csv', 'w', newline='') as f:
             writer = csv.writer(f, delimiter=',', quotechar='|')
             writer.writerow(['Customer:', self.cust])
             writer.writerow(['', 'Column'])
