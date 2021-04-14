@@ -3,7 +3,7 @@ import datetime
 from Slotting import *
 
 def waldo():
-    feb = pd.read_csv('7826_3PFShippingDetails_Feb 2021.csv',
+    feb = pd.read_csv('data/7826_3PFShippingDetails_Feb 2021.csv',
                       header = 2,
                       na_values = 0,
                       dtype = {'Part Number': 'string',
@@ -14,7 +14,7 @@ def waldo():
     #print(feb.head())
     #print(feb.dtypes)
     #print(len(feb))
-    mar = pd.read_csv('7826_3PFShippingDetails_March until 19.03.2021 .csv',
+    mar = pd.read_csv('data/7826_3PFShippingDetails_March until 19.03.2021 .csv',
                       header = 2,
                       dtype = {'Part Number': 'string',
                                'Order Number': 'string'},
@@ -40,7 +40,7 @@ def level():
     weeks = 6
     pf = 48
 
-    df = pd.read_csv('LeVel Optimization Hashkey.csv',
+    df = pd.read_csv('data/LeVel Optimization Hashkey.csv',
                      dtype = 'string')\
                          .rename(columns = {'Created Date': 'datetime',
                                             'Optimization Hash Key': 'hashkey'})
@@ -77,12 +77,12 @@ def level():
             print(i)
 
 def level_continuous():
-    hashkey = load_powerBI_hashkey('LeVel Optimization Hashkey.csv')
+    hashkey = load_powerBI_hashkey('data/LeVel Optimization Hashkey.csv')
 
     pf2 = continuous_slotting(hashkey, [48, 32], 'TruVision_continuous')
 
 def nuskin():
-    hashkey = load_powerBI_hashkey('nuskin_hashkey.csv')
+    hashkey = load_powerBI_hashkey('data/nuskin_hashkey.csv')
 
     #print(hashkey[['date', 'hashkey']].groupby('date').agg(['count']))
 
@@ -92,42 +92,43 @@ def nuskin():
 def truvision():
     pfs = [9, 48]
         
-    #hashkey = generate_hashkey_ASC('truvision-asc-orders.csv')
+    #hashkey = generate_hashkey_ASC('data/truvision-asc-orders.csv')
 
     #print(hashkey.head())
 
-    #hashkey = hashkey.set_index('order_number')
+    #hashkey = hashkey.set_index('data/order_number')
 
-    #hashkey.to_csv('truvision_hashkey.csv')
+    #hashkey.to_csv('data/truvision_hashkey.csv')
 
 
-    hashkey = load_hashkey('truvision_hashkey.csv')
-
-    print(hashkey['order_number'].count())
+    hashkey = load_hashkey('data/truvision_hashkey.csv')
 
     pf = slotting(hashkey, pfs, 'TruVision')
-    pf2 = continuous_slotting(hashkey, [48, 32], 'TruVision_continuous')
+    #pf2 = continuous_slotting(hashkey, [48, 32], 'TruVision_continuous')
 
 def main():
-    level_continuous()
+    #level_continuous()
     #waldo()
     #min_max_from_hashkey('do')
     #nuskin()
-    #truvision()
+    truvision()
 
 
 def test():
-    df = pd.read_csv('truvision_asc_hashkey.csv')
+    hashkey = load_hashkey('data/truvision_hashkey.csv')
 
-    print(df.head())
+    order_count = hashkey.order_config.value_counts().to_frame()\
+        .rename(columns={'order_config': 'order_count'})\
+        .reset_index()
 
-    print((df.index[0], df['date'].iloc[0]))
-    print((df.index[-1], df['date'].iloc[-1]))
+    prop_65 = hashkey[hashkey['hashkey'].str.contains('PROP65')][['hashkey']]
+    print(prop_65)
+    print(order_count)
     
 
     
 
 
 
-main()
-#test()
+#main()
+test()

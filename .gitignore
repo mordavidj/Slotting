@@ -365,3 +365,4 @@ FodyWeavers.xsd
 # Others
 *.csv
 *.xlsx
+data/
