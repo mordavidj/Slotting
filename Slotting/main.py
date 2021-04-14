@@ -2,6 +2,7 @@ import pandas as pd
 import datetime
 from Slotting import *
 
+
 def waldo():
     feb = pd.read_csv('data/7826_3PFShippingDetails_Feb 2021.csv',
                       header = 2,
@@ -34,6 +35,7 @@ def waldo():
     #print(h)
 
     slotting(h, [27, 48], 'Waldo')
+
 
 def level():
 
@@ -76,10 +78,12 @@ def level():
         if i not in norm_lst:
             print(i)
 
+
 def level_continuous():
     hashkey = load_powerBI_hashkey('data/LeVel Optimization Hashkey.csv')
 
     pf2 = continuous_slotting(hashkey, [48, 32], 'TruVision_continuous')
+
 
 def nuskin():
     hashkey = load_powerBI_hashkey('data/nuskin_hashkey.csv')
@@ -106,6 +110,7 @@ def truvision():
     pf = slotting(hashkey, pfs, 'TruVision')
     #pf2 = continuous_slotting(hashkey, [48, 32], 'TruVision_continuous')
 
+
 def main():
     #level_continuous()
     #waldo()
@@ -128,7 +133,5 @@ def test():
 
     
 
-
-
-#main()
-test()
+main()
+#test()

@@ -392,7 +392,7 @@ def continuous_slotting(hashkey, pf, cust):
 
         pickface = switch_pf(pf[p], cust, 1, 15)
         #print(top[p])
-        pickface.load(top[p])
+        pickface.populate(top[p])
         pickface.display()
         pickface.to_csv()
         pickfaces.append(pickface)
@@ -528,12 +528,12 @@ def slotting(hashkey, pf, cust):
         # Save the pickface info to a csv
         #top[p].to_csv(f'{cust}-{pf[p]}_slots.csv')
 
-        pickface = switch_pf(pf[p], cust, 1, 15)
+        pickf = switch_pf(pf[p], cust, 1, 15)
         #print(top[p])
-        pickface.load(top[p])
-        pickface.display()
-        pickface.to_csv()
-        pickfaces.append(pickface)
+        pickf.populate(top[p])
+        pickf.display()
+        pickf.to_csv()
+        pickfaces.append(pickf)
 
     return pickfaces
        
