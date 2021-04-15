@@ -41,7 +41,6 @@ class Pickface():
             row_del = ''
             for r in range(self.bay_rows - 1, -1, -1):
                 print(row_del) 
-                
                 for c in range(self.bay_cols):
                     print(f'## {str(b+1).zfill(2)}.{ROWS[r]}{str(c+1).zfill(2)}: {self.slots[b][r][c].id} ##', end='')
 
@@ -68,7 +67,7 @@ class Pickface():
     # write the pickface to an excel file
     #################################################
     def to_csv(self):
-        with open(f'data/{self.cust}-{self.bays * self.bay_cols * self.bay_rows}_slots.xlsx', 'w', newline='') as f:
+        with open(f'data/{self.cust}-{self.bays * self.bay_cols * self.bay_rows}_slots.csv', 'w', newline='') as f:
             writer = csv.writer(f, delimiter=',', quotechar='|')
             writer.writerow(['Customer:', self.cust])
             writer.writerow(['', 'Column'])
@@ -128,6 +127,38 @@ class Pickface():
                 rows.append(cols)
 
             self.slots.append(rows)
+    
+
+    #################################################
+    # Find an item within the pickface by id
+    #################################################
+    def get_item_by_id(self, id):
+        i = str(id)
+
+        for b in range(self.bays):
+            for r in range(self.bay_rows):
+                for c in range(self.bay_cols):
+                    if i == slots[b][r][c].id:
+                        return {'slot': f'{str(b+1).zfill(2)}.{ROWS[r]}{str(c+1).zfill(2)}',
+                                'info': slots[b][r][c].get_info()}
+
+        return -1
+
+
+    #################################################
+    # Get item by slot
+    #################################################
+    def get_item_by_slot(self, slot):
+        bay, row, col = slot.split('.')
+        b = int(bay)
+        r = ROWS.index(row)
+        c = int(col)
+
+        try:
+            return slots[b][r][c].get_info()
+
+        except:
+            raise Exception(f'Invalid Slot: {slot}')     
     
 
 class PF_9(Pickface):

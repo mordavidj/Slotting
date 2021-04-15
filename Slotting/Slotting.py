@@ -274,9 +274,11 @@ def continuous_slotting(hashkey, pf, cust):
 
     # Create a set of all the unique item id's for using across pickfaces
     item_ids = set()
+
     for index, row in order_count.iterrows():
         for i in index.split(';'):
             item_ids.add(i)
+
     items_df = pd.DataFrame(item_ids, columns = ['item_id'])\
         .sort_values('item_id')\
         .set_index('item_id')
@@ -288,7 +290,7 @@ def continuous_slotting(hashkey, pf, cust):
 
 
     # Load the master case quantities for min-max calculations
-    #case_info = pd.read_excel('../../../Documents/Master Case info.xlsx',
+    #item_info = pd.read_excel('../../../Documents/Master Case info.xlsx',
     #                     sheet_name = 'Case')[['item_id', 'case_qty']]
 
 
@@ -373,28 +375,32 @@ def continuous_slotting(hashkey, pf, cust):
         visited = list(order_count[order_count.visited == True].index)
         #print(visited)
         
+        # Just some reporting statistics to know how many orders the PF could serve
         ord_serv = order_count[order_count.visited == True].order_count.sum()
-        print(f'\nTotal Orders: {ord_sum}')
-        print(f'Orders Served by PF: {ord_serv}')
+        print('\nTotal Orders: {0:,}'.format(ord_sum))
+        print('Orders Served by PF: {0:,}'.format(ord_serv))
         ord_per = ord_serv / ord_sum
-        print('% Orders Served: {:.2%}'.format(ord_per))
+        print('% Orders Served: {0:.2%}'.format(ord_per))
 
+        # Calculate the min-max for the top X items using the hashkey
         sub_hashkey = hashkey[hashkey.order_config.isin(visited)]
-        #print(sub_hashkey)
-        #min_max = min_max_from_hashkey(sub_hashkey, case_info)
+        #min_max = min_max_from_hashkey(sub_hashkey, item_info)
         #print(min_max)
         
         # Remove all the used order configurations
         order_count = order_count[order_count.visited != True]
 
-        # Save the pickface info to a csv
-        #top[p].to_csv(f'{cust}-{pf[p]}_slots.csv')
-
+        
+        # Create the right pickface given the number of slots
         pickface = switch_pf(pf[p], cust, 1, 15)
-        #print(top[p])
+        # Put the items into the pickface
+        items = top[p].join(item_info, on = ['item_id'], how = 'left')
         pickface.populate(top[p])
+        # Show the pickface in the console
         pickface.display()
+        # Save the pickface info to a csv
         pickface.to_csv()
+
         pickfaces.append(pickface)
 
     return pickfaces
@@ -512,10 +518,10 @@ def slotting(hashkey, pf, cust):
         #print(visited)
         
         ord_serv = order_count[order_count.visited == True].order_count.sum()
-        print(f'\nTotal Orders: {ord_sum}')
-        print(f'Orders Served by PF: {ord_serv}')
+        print('\nTotal Orders: {0:,}'.format(ord_sum))
+        print('Orders Served by PF: {0:,}'.format(ord_serv))
         ord_per = ord_serv / ord_sum
-        print('% Orders Served: {:.2%}'.format(ord_per))
+        print('% Orders Served: {0:.2%}'.format(ord_per))
 
         sub_hashkey = hashkey[hashkey.order_config.isin(visited)]
         #print(sub_hashkey)
