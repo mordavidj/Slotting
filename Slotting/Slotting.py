@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 import datetime
 from Pickface import *
+from DB import connect_db
 
 #################################################
 # Load a Power BI Hashkey report from a file and generate order configurations
@@ -81,30 +82,72 @@ def generate_hashkey(df):
     return df
 
 
-#################################################
-# Take a file from ASC and generate hashkeys and order configs
-#################################################
-def generate_hashkey_ASC(filepath):
+def generate_hashkey_ASC(filepath, cust):
+    '''Take a file from ASC and generate hashkeys and order configs
 
+    '''
     print(f'\nGenerating Hashkey from ASC file: {filepath}')
 
-    hash = ''
-    config = ''
-    prefix = ''     
+    df = None
+
+    # Get the file type and read it in appropriately
+    f_type = filepath.split('.')[-1]
+    if f_type == 'csv':
+        df = pd.read_csv(filepath,
+                         dtype = 'string')
+
+    elif f_type == 'xlsx':
+        df = pd.read_excel(filepath,
+                           dtype = 'string')
+
+    print(df)
+
+    dict = {}
+    hash = []
+    config = []  
     n_frame = []    # Stores all items in the desired format
     n_row = []      # Keeps each order together in one row
+
+    print('Loading kit and item info... ', end = '')
+
+    cnxn = connect_db()
+    crsr = cnxn.cursor()
+
+    item_sql = '''SELECT i.item_id, i.status
+                  FROM Item AS i
+                  INNER JOIN Customer AS c ON i.customer = c.customer_id
+                  WHERE c.customer = ucase('{0:s}');'''.format(cust)
+
+    items = pd.read_sql(item_sql, cnxn).set_index('item_id')
+    item_id = list(items.index.values)
+    
+
+    kit_sql = '''SELECT k.kit_id, k.status
+                  FROM Kit AS k
+                  INNER JOIN Customer AS c ON k.customer = c.customer_id
+                  WHERE c.customer = ucase('{0:s}');'''.format(cust)
+
+    kits = pd.read_sql(kit_sql, cnxn).set_index('kit_id')
+
+    kit_id = list(kits.index.values)
+    
+    print('Done\nBuilding hashkey from items and kits... ', end = '')
 
     for index, row in df.iterrows():
         
         # If the it item can be converted into a date, it's a new item
         try:
             date_time = datetime.datetime.strptime(row['SHIPDATE'], "%m/%d/%Y %I:%M:%S %p")
-            n_row.append(hash)
-            n_row.append(config)
+            for i in sorted(dict.keys()):
+                hash.append(str(i + '*' + dict[i]))
+                config.append(i)
+
+            n_row.append(';'.join(hash))
+            n_row.append(';'.join(config))
             n_frame.append(n_row.copy())
-            hash = ''
-            config = ''
-            prefix = ''
+            dict.clear()
+            hash.clear()
+            config.clear()
             
             #print(n_frame)
             n_row.clear()
@@ -112,12 +155,30 @@ def generate_hashkey_ASC(filepath):
             n_row.append(row['ORDERNUMBER'])
 
         except:
-            hash += prefix + str(row["ORDERNUMBER"]) + '*' + str(row["SHIPDATE"])
-            config += prefix + str(row["ORDERNUMBER"])
-            prefix = ';'
+            if row['ORDERNUMBER'] in item_id:
+                if items.loc[row['ORDERNUMBER'], 'status'] != 'O':
+                    if row['ORDERNUMBER'] in dict.keys():
+                        dict[row['ORDERNUMBER']] += row['SHIPDATE']
+
+                    else:
+                        dict[row['ORDERNUMBER']] = row['SHIPDATE']
+
+            elif row['ORDERNUMBER'] in kit_id:
+                continue
+                #if kits.loc[row['ORDERNUMBER'], 'status'] != 'O':
+                #    sql = '''SELECT item FROM Kits_Items 
+                #             WHERE kit = '{0:s}';'''.format(row['ORDERNUMBER'])
+
+                #    res = crsr.execute(sql).fetchall()
+
+                #    for r in res:
+                #        if r[0] in dict.keys():
+                #            dict[r[0]] += int(r[1])
+
+                #        else:
+                #            dict[r[0]] = int(r[1])
 
     n_row.append(str)
-    tmp = n_row
     #print(tmp)
     n_frame.append(n_row.copy())
 
@@ -125,15 +186,19 @@ def generate_hashkey_ASC(filepath):
     n_frame.pop(0)
     hashkey = pd.DataFrame(n_frame, columns = ['date', 'order_number', 'hashkey', 'order_config'])
 
+    hashkey = hashkey[hashkey['hashkey'] != '']
     print('Done')
     return hashkey
 
 
-#################################################
-# Take an exported file from the SQL server and generate hashkeys and order configs
-# WARNING: SQL server puts 0's when an order shipped incompletely
-#################################################
 def generate_hashkey_SQL(filepath):
+    '''Take an exported file from the SQL server and generate hashkeys and 
+    order configs
+    
+    WARNING: SQL server puts 0's when an order shipped incompletely instead of 
+    displaying the number ordered
+
+    '''
     df = None
 
     # Get the file type and read it in appropriately
@@ -172,12 +237,12 @@ def generate_hashkey_SQL(filepath):
     return hashkey
 
 
-#################################################
-# Calculate a min-max from a hashkey using 80th and 90th 
-# percentiles of items shipped each day as min and max
-# and using master case quantities.
-#################################################
 def min_max_from_hashkey(hashkey, case_info):
+    '''Calculate a min-max from a hashkey using 80th and 90th 
+    percentiles of items shipped each day as min and max
+    and using master case quantities.
+
+    '''
     print('Calculating Min-Max from hashkey...', end = '')
 
     # Split hashkey by each item while keeping the date
@@ -216,21 +281,21 @@ def min_max_from_hashkey(hashkey, case_info):
     return min_max
 
 
-#################################################
-# Format NaN's, None's, and others into integers
-#################################################
 def to_int(val):
+    '''Format NaN's, None's, and others into integers
+    
+    '''
     if math.isnan(val) or val is None:
         return ''
     else:
         return int(val)
 
 
-#################################################
-# A Function meant to server like a switch statement,
-# creates the correct pickface based on input value
-#################################################
 def switch_pf(i, cust, depth, height):
+    '''A Function meant to server like a switch statement,
+    creates the correct pickface based on input value
+
+    '''
     if i == 9:
         return PF_9(cust, depth, height)
 
@@ -247,12 +312,13 @@ def switch_pf(i, cust, depth, height):
         return Omni(cust, depth, height)
 
 
-#################################################
-# Builds the desired pickfaces based on the most popular order configurations.
-# It is continuous because no items will repeat across any of the pickfaces,
-# incomplete orders get passed to the next pickface.
-#################################################
 def continuous_slotting(hashkey, pf, cust):
+    '''Builds the desired pickfaces based on the most popular order configurations.
+    It is continuous because no items will repeat across any of the pickfaces,
+    incomplete orders get passed to the next pickface.
+
+    '''
+
     # convert the type to an iterable list
     if type(pf) is not list:
         pf = [pf]
@@ -394,7 +460,7 @@ def continuous_slotting(hashkey, pf, cust):
         # Create the right pickface given the number of slots
         pickface = switch_pf(pf[p], cust, 1, 15)
         # Put the items into the pickface
-        items = top[p].join(item_info, on = ['item_id'], how = 'left')
+        items = top[p].join(item_info.set_index('item_id'), how = 'left')
         pickface.populate(top[p])
         # Show the pickface in the console
         pickface.display()
@@ -409,7 +475,7 @@ def continuous_slotting(hashkey, pf, cust):
 #################################################
 # Builds the desired pickfaces based on the most popular order configurations.
 #################################################
-def slotting(hashkey, pf, cust):
+def slotting(hashkey, pf, cust, **kwargs):
 
     # convert the type to an iterable list
     if type(pf) is not list:
@@ -425,9 +491,12 @@ def slotting(hashkey, pf, cust):
     if cust == '':
         raise Exception('"cust" is required for documentation purposes.')
     
+    ignored = kwargs.get('ignore')
+
     #print(hashkey)
     order_count = hashkey.order_config.value_counts().to_frame()\
         .rename(columns={'order_config': 'order_count'})
+
     order_count['visited'] = False
 
     hashkey_count = hashkey.hashkey.value_counts().to_frame()
@@ -435,7 +504,7 @@ def slotting(hashkey, pf, cust):
 
     # Load the master case quantities for min-max calculations
     #case_info = pd.read_excel('../../../Documents/Master Case info.xlsx',
-    #                     sheet_name = 'Case')[['item_id', 'case_qty']]
+    #                     sheet_name = 'Items')[['item_id', 'case_qty']]
 
 
     top = []        # Store top X items for each pickface
@@ -444,7 +513,19 @@ def slotting(hashkey, pf, cust):
     ord_sum = order_count.order_count.sum()
     backup = []     # Incomplete order configurations to use for later
 
-    
+    if ignored:
+        print('Removing orders with ignored items... ', end = '')
+        for ind, row in order_count.iterrows():
+            for i in ignored:
+                if i in ind:
+                    #print(len(order_count))
+                    #print(ind)
+                    #print(row)
+                    order_count = order_count.drop(ind)
+                    #print(len(order_count))
+                    break
+        print('Done')
+
     # loop through each pickface number and get those top X items
     for p in range(len(pf)):
         configs = 0 # Number for tracking order configurations
@@ -452,6 +533,7 @@ def slotting(hashkey, pf, cust):
         top.append(pd.DataFrame(columns = ['item_id', 'orders', 'order_configs']))
         backup = []
 
+        
         for ind, row in order_count.iterrows():
             items = ind.split(';')
 

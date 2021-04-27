@@ -14,6 +14,7 @@
     <IsWindowsApplication>False</IsWindowsApplication>
     <SuppressConfigureTestFrameworkPrompt>true</SuppressConfigureTestFrameworkPrompt>
     <InterpreterId>MSBuild|slotting_env|$(MSBuildProjectFullPath)</InterpreterId>
+    <SuppressEnvironmentCreationPrompt>True</SuppressEnvironmentCreationPrompt>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
     <DebugSymbols>true</DebugSymbols>
@@ -28,17 +29,12 @@
     <Compile Include="main.py">
       <SubType>Code</SubType>
     </Compile>
+    <Compile Include="DB.py">
+      <SubType>Code</SubType>
+    </Compile>
     <Compile Include="Pickface.py" />
     <Compile Include="Slotting.py" />
     <Compile Include="test.py" />
-  </ItemGroup>
-  <ItemGroup>
-    <Content Include="7826_3PFShippingDetails_Feb 2021.csv" />
-    <Content Include="7826_3PFShippingDetails_March until 19.03.2021 .csv" />
-    <Content Include="LeVel Optimization Hashkey.csv" />
-  </ItemGroup>
-  <ItemGroup>
-    <InterpreterReference Include="CondaEnv|CondaEnv|VS2019" />
   </ItemGroup>
   <ItemGroup>
     <Interpreter Include="slotting_env\">

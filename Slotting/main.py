@@ -1,6 +1,8 @@
 import pandas as pd
 import datetime
 from Slotting import *
+from Item import *
+from DB import *
 
 
 def waldo():
@@ -82,7 +84,7 @@ def level():
 def level_continuous():
     hashkey = load_powerBI_hashkey('data/LeVel Optimization Hashkey.csv')
 
-    pf2 = continuous_slotting(hashkey, [48, 32], 'TruVision_continuous')
+    pf2 = continuous_slotting(hashkey, [48, 32], 'LeVel_continuous')
 
 
 def nuskin():
@@ -90,48 +92,140 @@ def nuskin():
 
     #print(hashkey[['date', 'hashkey']].groupby('date').agg(['count']))
 
-    pf = slotting(hashkey, [27, 48], 'NuSkin')
+    ignored = ['01003882', '01003883', '01102892', '01003904', 
+               '01310011', '01003440', '01003901', '01003529']
+
+    pf = slotting(hashkey, [27, 27], 'NuSkin', ignore = ignored)
 
 
 def truvision():
     pfs = [9, 48]
         
-    #hashkey = generate_hashkey_ASC('data/truvision-asc-orders.csv')
+    hashkey = generate_hashkey_ASC('data/truvision-asc-orders.csv', 'truvision')
 
-    #print(hashkey.head())
+    print(hashkey.head())
 
-    #hashkey = hashkey.set_index('data/order_number')
+    hashkey = hashkey.set_index('order_number')
 
-    #hashkey.to_csv('data/truvision_hashkey.csv')
+    hashkey.to_csv('data/truvision_hashkey.csv')
 
-
-    hashkey = load_hashkey('data/truvision_hashkey.csv')
+    #hashkey = load_hashkey('data/truvision_hashkey.csv')
 
     pf = slotting(hashkey, pfs, 'TruVision')
     #pf2 = continuous_slotting(hashkey, [48, 32], 'TruVision_continuous')
 
+
+
+
+def cheese(*args, **kwargs):
+    print(f'args: {args}, kwargs: {kwargs}')
+
+
+
+
+def kits_from_ASC(filepath, cust):
+    df = pd.read_csv(filepath,
+                      dtype = "string")
+
+    dict = {}
+    n_frame = []    # Stores all items in the desired format
+    n_row = []      # Keeps each order together in one row
+    hash = []
+
+
+    for index, row in df.iterrows():
+        
+        # If the it item can be converted into a date, it's a new item
+        if row['VMI_CUSTID'] == cust:
+            for i in sorted(dict.keys()):
+                hash.append(str(i + '*' + dict[i]))
+            
+            n_row.append(';'.join(hash))
+            n_frame.append(n_row.copy())
+            dict = {}
+            hash.clear()
+            
+            #print(n_frame)
+            n_row.clear()
+            n_row.append(row['VMI_CUSTID'])
+            n_row.append(row['ITEMID'])
+            n_row.append(row['DESCRIPTION'])
+
+        else:
+            dict[str(row["VMI_CUSTID"])] = str(row["ITEMID"])
+
+    for i in sorted(dict.keys()):
+        hash.append(str(i + '*' + dict[i]))
+            
+    n_row.append(';'.join(hash))
+    n_frame.append(n_row.copy())
+
+    # first item is a blank line, so pop it
+    n_frame.pop(0)
+    kits = pd.DataFrame(n_frame, columns = ['customer', 'kit_id', 'description', 'hashkey'])
+    kits = kits.set_index('client').sort_values('kit_id')
+    kits.to_csv(f'{cust}_kits.csv')
+    print('Done')
+    return kits
+
+
+def kits_from_ASC_to_SQL(filepath, cust):
+    df = pd.read_csv(filepath,
+                      dtype = "string")
+
+    dict = {}
+    kits = []    # Stores all items in the desired format
+    kiq = []     # Keeps each order together in one row
+    kit = ''
+
+    for index, row in df.iterrows():
+        
+        # If the it item can be converted into a date, it's a new item
+        if row['VMI_CUSTID'] == cust:
+            kit = row['ITEMID']
+            kits.append([row['VMI_CUSTID'], kit, row['DESCRIPTION']])
+
+        else:
+            kiq.append([kit, row['VMI_CUSTID'], row["ITEMID"]])
+
+
+    # first item is a blank line, so pop it
+    df_kits = pd.DataFrame(kits, columns = ['customer', 'kit_id', 'description'])
+    df_kiq = pd.DataFrame(kiq, columns = ['kit', 'item', 'qty'])
+
+    df_kits = df_kits.set_index('customer')
+    df_kiq = df_kiq.set_index('kit')
+
+    df_kits.to_csv(f'{cust}_Kit_SQL.csv')
+    df_kiq.to_csv(f'{cust}_Kits_Items_SQL.csv')
+    print('Done')
+    return kits
 
 def main():
     #level_continuous()
     #waldo()
     #min_max_from_hashkey('do')
     #nuskin()
-    truvision()
-
-
+    truvision()   
+    #kits_from_ASC_to_SQL("C:\\Users\\David.Moreno\\OneDrive - Visible SCM\\Desktop\\truvision_kit.csv", 'TRUVISION') 
+    
 def test():
-    hashkey = load_hashkey('data/truvision_hashkey.csv')
 
-    order_count = hashkey.order_config.value_counts().to_frame()\
-        .rename(columns={'order_config': 'order_count'})\
-        .reset_index()
+    cnxn = connect_db()
+    cursor = cnxn.cursor()
 
-    prop_65 = hashkey[hashkey['hashkey'].str.contains('PROP65')][['hashkey']]
-    print(prop_65)
-    print(order_count)
-    
+    sql = '''SELECT item, item_qty FROM Kits_Items 
+             WHERE kit = '3467';'''
 
-    
+    d = cursor.execute(sql).fetchall()
+
+    #d = cursor.fetchall()
+    print(d)
+
+    for r in d:
+        print(r[0])
+
+    cnxn.close()
 
 main()
 #test()
