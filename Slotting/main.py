@@ -1,4 +1,5 @@
 import pandas as pd
+pd.set_option('max_columns', None)
 import datetime
 from Slotting import *
 from Item import *
@@ -101,15 +102,15 @@ def nuskin():
 def truvision():
     pfs = [9, 48]
         
-    hashkey = generate_hashkey_ASC('data/truvision-asc-orders.csv', 'truvision')
+    #hashkey = generate_hashkey_ASC(r"C:\Users\David.Moreno\OneDrive - Visible SCM\Desktop\truvision_asc_orders_and_quantities.csv", 'truvision')
 
-    print(hashkey.head())
+    #print(hashkey.head())
 
-    hashkey = hashkey.set_index('order_number')
+    #hashkey = hashkey.set_index('order_number')
 
-    hashkey.to_csv('data/truvision_hashkey.csv')
+    #hashkey.to_csv('data/truvision_hashkey.csv')
 
-    #hashkey = load_hashkey('data/truvision_hashkey.csv')
+    hashkey = load_hashkey('data/truvision_hashkey.csv')
 
     pf = slotting(hashkey, pfs, 'TruVision')
     #pf2 = continuous_slotting(hashkey, [48, 32], 'TruVision_continuous')
@@ -207,25 +208,54 @@ def main():
     #min_max_from_hashkey('do')
     #nuskin()
     truvision()   
-    #kits_from_ASC_to_SQL("C:\\Users\\David.Moreno\\OneDrive - Visible SCM\\Desktop\\truvision_kit.csv", 'TRUVISION') 
-    
+    #kits_from_ASC_to_SQL(r"..\..\..\Desktop\truvision_kit.csv", 'TRUVISION') 
+   
+import tkinter as tk
+
 def test():
 
-    cnxn = connect_db()
-    cursor = cnxn.cursor()
+    top = tk.Tk()\
+        .title("Automated Slotting Tool")\
+        .columnconfigure(0, weight = 1)\
+        .rowconfigure(0, weight = 1)
 
-    sql = '''SELECT item, item_qty FROM Kits_Items 
-             WHERE kit = '3467';'''
+    def gen_hashkey_gui():
+        win = tk.Toplevel(top)
+        lab = tk.Label(master = win,
+                       text="Generate Hashkey")\
+                           .pack(pady = 15)
+        win.mainloop()
 
-    d = cursor.execute(sql).fetchall()
+    fr_main = tk.Frame(top, width = 500, height = 400)
+    fr_main.grid(row = 0, 
+                 column = 0, 
+                 sticky = (tk.N, tk.W, tk.E, tk.S))
 
-    #d = cursor.fetchall()
-    print(d)
+    fr_buttons = tk.Frame(master = fr_main,
+                          relief = tk.RIDGE,
+                          borderwidth = 1)\
+                              .columnconfigure(0, minsize = 200)\
+                              .rowconfigure([0, 1], minsize = 50)\
+                              .place(x = 10, y = 50)
 
-    for r in d:
-        print(r[0])
+    fr_text = tk.Frame(fr_main,
+                       relief = tk.RIDGE,
+                       borderwidth = 3,
+                       bg = "white")\
+                           .place(x = 300, y = 50)
 
-    cnxn.close()
+    lab = tk.Label(master = fr_text,
+                   text="Automated Slotting Tool")\
+                       .pack()
+
+    but_GenHash = tk.Button(master = fr_buttons,
+                            text = "Generate Hashkey",
+                            command = gen_hashkey_gui)
+    but_Slott = tk.Button(master = fr_buttons,
+                          text = "Calculate Slotting")
+    but_GenHash.grid(row = 0, column = 0)
+    but_Slott.grid(row = 1, column = 0)
+    top.mainloop()
 
 main()
 #test()
