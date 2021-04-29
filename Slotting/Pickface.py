@@ -1,21 +1,26 @@
 import pandas as pd
+pd.set_option('max_columns', None)
 import math
 from Item import *
 import csv
+import datetime
 
 ROWS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']
 
 
-class Slot():
-    def __init__(self, item, row, col, min, max):
-        self.row = row 
-        self.col = col
-        self.item = item
-        self.min = min
-        self.max = max
-
-
 class Pickface():
+    '''Pickface class that stores info about the pickface and stores an array of items.
+
+    '''
+    bays: int 
+    bay_cols: int
+    bay_rows: int
+    row_height: int
+    depth: int
+    slots: list 
+    cust: str 
+    row_priority: list
+    col_priority: list
 
     def __init__(self):
         self.bays = 0
@@ -29,10 +34,10 @@ class Pickface():
         self.col_priority = []
 
 
-    #################################################
-    # Print the PF to console
-    #################################################
     def display(self):
+        '''Print the PF to console
+
+        '''
         print('')
         print(f'Customer: {self.cust}')
         print('|||||||||||||||||||||||||||||||||||||||||||||||')
@@ -49,10 +54,10 @@ class Pickface():
             print('\n|||||||||||||||||||||||||||||||||||||||||||||||')
 
 
-    #################################################
-    # Return all the items from the pickface
-    #################################################
     def list_items(self):
+        '''Return all the items from the pickface
+
+        '''
         items = []
 
         for b in range(self.bays):
@@ -63,36 +68,34 @@ class Pickface():
         return items
 
 
-    #################################################
-    # write the pickface to an excel file
-    #################################################
     def to_csv(self):
-        with open(f'data/{self.cust}-{self.bays * self.bay_cols * self.bay_rows}_slots.csv', 'w', newline='') as f:
+        '''write the pickface to an excel file
+
+        '''
+        with open(f'data/{self.cust}-{self.bays * self.bay_cols * self.bay_rows}.csv', 'w', newline='') as f:
             writer = csv.writer(f, delimiter=',', quotechar='|')
-            writer.writerow(['Customer:', self.cust])
-            writer.writerow(['', 'Column'])
-            cols = []
-            
-            for i in range(1, self.bay_cols + 1):
-                cols.append(i)
+            writer.writerow(['Customer:', self.cust, datetime.datetime.now()])
+            writer.writerow(['Item', 'Description', 'Loc', 'Bay', 'Row', 'Col', 'Min', 'Max'])
 
-            writer.writerow(['Row'] + cols * self.bays)
-            
-            for r in range(self.bay_rows - 1, -1, -1):
-                row = [ROWS[r]]
-
-                for b in range(self.bays):
+            for b in range(self.bays):
+                for r in range(self.bay_rows):
                     for c in range(self.bay_cols):
-                        row.append(self.slots[b][r][c].id)
+                        item = self.slots[b][r][c]
+                        writer.writerow([item.id, 
+                                         item.desc,
+                                         f'{str(b+1).zfill(2)}.{ROWS[r]}{str(c+1).zfill(2)}',
+                                         str(b+1).zfill(2), 
+                                         ROWS[r], 
+                                         str(c+1).zfill(2), 
+                                         item.min, 
+                                         item.max])
 
-                writer.writerow(row)
               
-                
-    #################################################
-    # Load all the priority items in a predetermined order into the pickface
-    #################################################
+            
     def populate(self, items):
-        #print(items[['orders', 'percent']])
+        '''Load all the priority items in a predetermined order into the pickface
+
+        '''
         splits = split(items, self.bays)
 
         for b in range(self.bays):
@@ -100,8 +103,16 @@ class Pickface():
             c = 0
 
             for index, row in splits[b].iterrows():
+                item_info = items.loc[index]
                 item = Item()
-                item.id = index
+                item.set_id(index)
+                item.set_desc(item_info.loc['description'])
+                item.set_case_qty(item_info.loc['case_qty'])
+                item.set_dimensions(item_info.loc['width'],
+                                    item_info.loc['length'],
+                                    item_info.loc['height'])
+                item.set_minmax(item_info.loc['min'],
+                                item_info.loc['max'])
                 self.slots[b][self.row_priority[r]][self.col_priority[c]] = item
                 c += 1 
 
@@ -113,10 +124,10 @@ class Pickface():
                         r %= len(self.row_priority)
 
 
-    #################################################
-    # Create empty items for every slot in the pickface
-    #################################################
     def load(self):
+        '''Create empty items for every slot in the pickface
+        
+        '''
         for b in range(self.bays):
             rows = []
             for r in range(self.bay_rows):
@@ -129,10 +140,10 @@ class Pickface():
             self.slots.append(rows)
     
 
-    #################################################
-    # Find an item within the pickface by id
-    #################################################
     def get_item_by_id(self, id):
+        '''Find an item within the pickface by id
+
+        '''
         i = str(id)
 
         for b in range(self.bays):
@@ -145,11 +156,11 @@ class Pickface():
         return -1
 
 
-    #################################################
-    # Get item by slot
-    #################################################
     def get_item_by_slot(self, slot):
-        bay, row, col = slot.split('.')
+        '''Get item by slot
+
+        '''j
+        bay, row_col = slot.split('.')
         b = int(bay)
         r = ROWS.index(row)
         c = int(col)
@@ -233,12 +244,11 @@ class Omni(Pickface):
         
         self.load()
             
-
-#################################################
-# Find a good distribution of items accross the bays for the pickface
-#################################################           
+           
 def split(items, num_bays):
+    '''Find a good distribution of items accross the bays for the pickface
 
+    '''
     items['visited'] = False
     t = []
     tmp = items.copy()
@@ -251,12 +261,12 @@ def split(items, num_bays):
         sum = items['percent'].iloc[0]
         tup = (items.index[0], items['percent'].iloc[0])
         t[-1].append(tup)
-        items.iat[0, 3] = True
+        items.iat[0, 10] = True
 
         for i in range(-1, -num, -1):
             t[-1].append((items.index[i], items['percent'].iloc[i]))
             sum += items['percent'].iloc[i]
-            items.iat[i, 3] = True
+            items.iat[i, 10] = True
 
         if sum >= (1 / num_bays) and num_bays != 1:
             items = items[items.visited == False]
@@ -338,7 +348,7 @@ def split(items, num_bays):
 
             sums.append(sum)
             parts.append(i)
-    
+
     # Print distribution to the console
     if num_bays > 1:
         print(f'\nBay Load Distribution:')
@@ -354,5 +364,5 @@ def split(items, num_bays):
         parts[i] = pd.DataFrame(parts[i], 
                                 columns=['item_id', 'percent'])\
                                     .set_index('item_id')
-    
+
     return parts
