@@ -2,12 +2,12 @@ import pyodbc
 
 def connect_db():
     try:
-        connection = pyodbc.connect(r'Driver={Microsoft Access Driver (*.mdb, *.accdb)};DBQ=D:\OneDrive - Visible SCM\db\Items.accdb;')
+        connection = pyodbc.connect(r'Driver={Microsoft Access Driver (*.mdb, *.accdb)};DBQ=..\..\..\db\Items.accdb;')
         connection.autocommit = False
         return connection
 
-    except:
-        print('DB connection failed.')
+    except pyodbc.Error as err:
+        raise Exception(err)
         return -1
     
     #cursor = conn.cursor()
