@@ -2,8 +2,10 @@ import pandas as pd
 pd.set_option('max_columns', None)
 import datetime
 from Slotting import *
+from Pickface import *
 from Item import *
 from DB import *
+
 
 
 def waldo():
@@ -38,6 +40,7 @@ def waldo():
     #print(h)
 
     slotting(h, [27, 48], 'Waldo')
+
 
 
 def level():
@@ -82,10 +85,12 @@ def level():
             print(i)
 
 
+
 def level_continuous():
     hashkey = load_powerBI_hashkey('data/LeVel Optimization Hashkey.csv')
 
     pf2 = continuous_slotting(hashkey, [48, 32], 'LeVel_continuous')
+
 
 
 def nuskin():
@@ -98,9 +103,10 @@ def nuskin():
 
     pf = slotting(hashkey, [27, 27], 'NuSkin', ignore = ignored)
 
+    
 
 def truvision():
-    pfs = [9, 48]
+    pfs = [9]
         
     #hashkey = generate_hashkey_ASC(r"C:\Users\David.Moreno\OneDrive - Visible SCM\Desktop\truvision_asc_orders_and_quantities.csv", 'truvision')
 
@@ -110,17 +116,18 @@ def truvision():
 
     #hashkey.to_csv('data/truvision_hashkey.csv')
 
-    hashkey = load_hashkey('data/truvision_hashkey.csv')
+    #hashkey = load_hashkey('data/truvision_hashkey.csv')
 
-    pf = slotting(hashkey, pfs, 'TruVision')
+    #pf = slotting(hashkey, pfs, 'TruVision')
+    #pf[0].to_csv(r"..\..\..\Desktop")
+    new_pf = Pickface().from_csv(r"..\..\..\Desktop\TruVision-9.csv")
+
     #pf2 = continuous_slotting(hashkey, [48, 32], 'TruVision_continuous')
-
 
 
 
 def cheese(*args, **kwargs):
     print(f'args: {args}, kwargs: {kwargs}')
-
 
 
 
@@ -165,19 +172,21 @@ def kits_from_ASC(filepath, cust):
     n_frame.pop(0)
     kits = pd.DataFrame(n_frame, columns = ['customer', 'kit_id', 'description', 'hashkey'])
     kits = kits.set_index('client').sort_values('kit_id')
-    kits.to_csv(f'{cust}_kits.csv')
+    kits.to_csv(f'data/{cust}_kits.csv')
     print('Done')
+
     return kits
+
 
 
 def kits_from_ASC_to_SQL(filepath, cust):
     df = pd.read_csv(filepath,
                       dtype = "string")
 
-    dict = {}
-    kits = []    # Stores all items in the desired format
-    kiq = []     # Keeps each order together in one row
-    kit = ''
+    dict = {}   # Associate items and quantities
+    kits = []   # Stores all items in the desired format
+    kiq = []    # Keeps each order together in one row
+    kit = ''    # Store the kit id while adding items
 
     for index, row in df.iterrows():
         
@@ -190,17 +199,18 @@ def kits_from_ASC_to_SQL(filepath, cust):
             kiq.append([kit, row['VMI_CUSTID'], row["ITEMID"]])
 
 
-    # first item is a blank line, so pop it
+    # save the items into dataframes
     df_kits = pd.DataFrame(kits, columns = ['customer', 'kit_id', 'description'])
     df_kiq = pd.DataFrame(kiq, columns = ['kit', 'item', 'qty'])
 
     df_kits = df_kits.set_index('customer')
     df_kiq = df_kiq.set_index('kit')
 
-    df_kits.to_csv(f'{cust}_Kit_SQL.csv')
-    df_kiq.to_csv(f'{cust}_Kits_Items_SQL.csv')
+    df_kits.to_csv(f'data/{cust}_Kit_SQL.csv')
+    df_kiq.to_csv(f'data/{cust}_Kits_Items_SQL.csv')
     print('Done')
-    return kits
+
+
 
 def main():
     #level_continuous()
@@ -210,9 +220,10 @@ def main():
     truvision()   
     #kits_from_ASC_to_SQL(r"..\..\..\Desktop\truvision_kit.csv", 'TRUVISION') 
    
+
 import tkinter as tk
 
-def test():
+def gui():
 
     top = tk.Tk()\
         .title("Automated Slotting Tool")\
@@ -255,7 +266,11 @@ def test():
                           text = "Calculate Slotting")
     but_GenHash.grid(row = 0, column = 0)
     but_Slott.grid(row = 1, column = 0)
+
     top.mainloop()
 
+
+
 main()
-#test()
+#gui()
+

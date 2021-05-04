@@ -4,6 +4,7 @@ import math
 from Item import *
 import csv
 import datetime
+import os
 
 ROWS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']
 
@@ -15,7 +16,7 @@ class Pickface():
     bays: int 
     bay_cols: int
     bay_rows: int
-    row_height: int
+    row_height: list
     depth: int
     slots: list 
     cust: str 
@@ -26,7 +27,7 @@ class Pickface():
         self.bays = 0
         self.bay_cols = 0
         self.bay_rows = 0
-        self.row_height = 0
+        self.row_height = []
         self.depth = 0
         self.slots = []
         self.cust = ''
@@ -68,31 +69,122 @@ class Pickface():
         return items
 
 
-    def to_csv(self):
-        '''write the pickface to an excel file
+    def to_csv(self, dir = 'data/'):
+        '''Write the pickface to a csv file.
 
         '''
-        with open(f'data/{self.cust}-{self.bays * self.bay_cols * self.bay_rows}.csv', 'w', newline='') as f:
+        filepath = os.path.join(dir, f'{self.cust}-{self.bays * self.bay_cols * self.bay_rows}.csv')
+        print(f'Saving pickface to {filepath}... ', end = '')
+
+        with open(filepath, 'w', newline='') as f:
             writer = csv.writer(f, delimiter=',', quotechar='|')
             writer.writerow(['Customer:', self.cust, datetime.datetime.now()])
-            writer.writerow(['Item', 'Description', 'Loc', 'Bay', 'Row', 'Col', 'Min', 'Max'])
+            writer.writerow(['Bays:', self.bays])
+            writer.writerow(['Columns:', self.bay_cols])
+            writer.writerow(['Col Priority:', ';'.join(map(str, self.col_priority))])
+            writer.writerow(['Rows:', self.bay_rows])
+            writer.writerow(['Row Height:', ';'.join(map(str, self.row_height))])
+            writer.writerow(['Row Priority:', ';'.join(map(str, self.row_priority))])
+            writer.writerow(['Depth:', self.depth])
+            writer.writerow([])
+            writer.writerow(['Item', 'Description', 'Location', 'Bay', 'Row', 
+                             'Column', 'Min', 'Max', 'Case Qty', 'Width', 
+                             'Length', 'Height'])
 
             for b in range(self.bays):
                 for r in range(self.bay_rows):
                     for c in range(self.bay_cols):
                         item = self.slots[b][r][c]
+                        #print(item)
                         writer.writerow([item.id, 
                                          item.desc,
                                          f'{str(b+1).zfill(2)}.{ROWS[r]}{str(c+1).zfill(2)}',
-                                         str(b+1).zfill(2), 
+                                         b + 1, 
                                          ROWS[r], 
-                                         str(c+1).zfill(2), 
+                                         c + 1, 
                                          item.min, 
-                                         item.max])
+                                         item.max,
+                                         item.case_qty,
+                                         item.width,
+                                         item.length,
+                                         item.height])
 
+        print('Done')
               
-            
-    def populate(self, items):
+
+
+    def from_csv(self, filepath):
+        '''Read a pickface from a csv file as written by Pickface.to_csv().
+
+        '''
+        print(f'Reading pickface from {filepath}... ', end = '')
+    
+        with open(filepath, 'r', newline = '') as f:
+            reader = csv.reader(f)
+            try:
+                cust = next(reader)[1]
+                bays = next(reader)[1]
+                cols = next(reader)[1]
+                col_pr = next(reader)[1].split(';')
+                rows = next(reader)[1]
+                row_he = next(reader)[1].split(';')
+                row_pr = next(reader)[1].split(';')
+                depth = next(reader)[1]
+
+                self.bays = int(bays)
+                self.bay_cols = int(cols)
+                self.col_priority = map(int, col_pr)
+                self.bay_rows = int(rows)
+                self.row_priority = map(int, row_pr)
+                self.row_height = map(float, row_he)
+                self.depth = int(depth)
+                self.cust = cust.upper()
+
+            except:
+                print("ERROR: Pickface couldn't be loaded.")
+                return 
+
+            self.load()
+
+            next(reader)
+            next(reader)
+
+            for r in reader:
+                #r = next(reader)
+
+                try:
+                    id = str(r[0])
+                    desc = str(r[1])
+                    bay = int(r[3]) - 1
+                    row = ROWS.index(r[4])
+                    col = int(r[5]) - 1
+                    min = int(r[6])
+                    max = int(r[7])
+                    case_qty = int(float(r[8]))
+                    width = float(r[9])
+                    length = float(r[10])
+                    height = float(r[11])
+
+                except:
+                    print(f'\nInvalid item read:\n{r}')
+                    continue
+
+                item = Item(id = id, description = desc, height = height, 
+                            width = width, length = length, min = min, 
+                            max = max, case_qty = case_qty)
+                #item.display()
+                self.slots[bay][row][col] = item
+                #print(self.slots)
+                 
+                
+
+
+        print('Done')
+        self.display()
+
+
+
+    def populate(self, items: pd.DataFrame):
         '''Load all the priority items in a predetermined order into the pickface
 
         '''
@@ -103,17 +195,21 @@ class Pickface():
             c = 0
 
             for index, row in splits[b].iterrows():
-                item_info = items.loc[index]
-                item = Item()
-                item.set_id(index)
-                item.set_desc(item_info.loc['description'])
-                item.set_case_qty(item_info.loc['case_qty'])
-                item.set_dimensions(item_info.loc['width'],
-                                    item_info.loc['length'],
-                                    item_info.loc['height'])
-                item.set_minmax(item_info.loc['min'],
-                                item_info.loc['max'])
-                self.slots[b][self.row_priority[r]][self.col_priority[c]] = item
+                item_info = items.loc[index].to_dict()
+
+                item = Item(id = index,
+                            description = item_info['description'],
+                            case_qty = item_info['case_qty'],
+                            width = item_info['width'],
+                            length = item_info['length'],
+                            height = item_info['height'],
+                            min = item_info['min'],
+                            max = item_info['max'])
+                
+                row_pr = self.row_priority[r]
+                col_pr = self.col_priority[c]
+                self.slots[b][row_pr][col_pr] = item
+
                 c += 1 
 
                 if c % len(self.col_priority) == 0:
@@ -125,7 +221,7 @@ class Pickface():
 
 
     def load(self):
-        '''Create empty items for every slot in the pickface
+        '''Create empty items for every slot in the pickface.
         
         '''
         for b in range(self.bays):
@@ -133,7 +229,7 @@ class Pickface():
             for r in range(self.bay_rows):
                 cols = []
                 for c in range(self.bay_cols):
-                    cols.append(Item())
+                    cols.append(None)
 
                 rows.append(cols)
 
@@ -141,7 +237,7 @@ class Pickface():
     
 
     def get_item_by_id(self, id):
-        '''Find an item within the pickface by id
+        '''Find an item within the pickface by its id.
 
         '''
         i = str(id)
@@ -157,10 +253,13 @@ class Pickface():
 
 
     def get_item_by_slot(self, slot):
-        '''Get item by slot
+        '''Get item by slot, such as "02.B04 "
 
-        '''j
+        '''
         bay, row_col = slot.split('.')
+        row = row_col[:1]
+        col = row_col[1:]
+
         b = int(bay)
         r = ROWS.index(row)
         c = int(col)
@@ -173,13 +272,13 @@ class Pickface():
     
 
 class PF_9(Pickface):
-    def __init__(self, cust, depth, height):
+    def __init__(self, cust, depth, row_height):
         self.cust = cust
         self.bays = 1
         self.bay_cols = 3
         self.bay_rows = 3
         self.depth = depth
-        self.height = height
+        self.row_height = row_height
         self.slots = []
         self.col_priority = [1, 0, 2]
         self.row_priority = [1, 0, 2]
@@ -188,13 +287,13 @@ class PF_9(Pickface):
 
 
 class PF_27(Pickface):
-    def __init__(self, cust, depth, height):
+    def __init__(self, cust, depth, row_height):
         self.cust = cust
         self.bays = 3
         self.bay_cols = 3
         self.bay_rows = 3
         self.depth = depth
-        self.height = height
+        self.row_height = row_height
         self.slots = []
         self.col_priority = [1, 0, 2]
         self.row_priority = [1, 0, 2]
@@ -209,7 +308,7 @@ class PF_32(Pickface):
         self.bay_cols = 4
         self.bay_rows = 2
         self.depth = depth
-        self.height = height
+        self.row_height = height
         self.slots = []
         self.col_priority = [2, 1, 0, 3]
         self.row_priority = [1, 0]
@@ -218,13 +317,13 @@ class PF_32(Pickface):
 
 
 class PF_48(Pickface):
-    def __init__(self, cust, depth, height):
+    def __init__(self, cust, depth, row_height):
         self.cust = cust
         self.bays = 4
         self.bay_cols = 4
         self.bay_rows = 3
         self.depth = depth
-        self.height = height
+        self.row_height = row_height
         self.slots = []
         self.col_priority = [2, 1, 0, 3]
         self.row_priority = [1, 0, 2]
@@ -233,13 +332,13 @@ class PF_48(Pickface):
 
 
 class Omni(Pickface):
-    def __init__(self, cust, depth, height):
+    def __init__(self, cust, depth, row_height):
         self.cust = cust
         self.bays = 20
         self.bay_cols = 6
         self.bay_rows = 5
         self.depth = depth
-        self.height = height
+        self.row_height = row_height
         self.slots = []
         
         self.load()
