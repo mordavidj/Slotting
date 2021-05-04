@@ -250,35 +250,36 @@ def min_max_from_hashkey(hashkey, case_info):
     and using master case quantities.
 
     '''
-    print('\nCalculating Min-Max from hashkey...', end = '')
+    print('\nCalculating Min-Max from hashkey... ', end = '')
 
     # Split hashkey by each item while keeping the date
     df = pd.concat([pd.Series(row['date'], row['hashkey'].split(';')) for _, row in hashkey.iterrows()]).reset_index()
     df = df.rename(columns = {'index': 'hashkey', 0: 'date'})
     df = df[df['hashkey'] != '']
-    #print(df.head())
+    #print(df)
     
     # Split the hashkey into items and quantities
     df[['item_id', 'qty']] = df['hashkey'].str.split('*', expand=True)
     df['qty'] = df['qty'].astype(int)
-    #print(df.head())
+    #print(df)
 
     # Get the total shipped each day
     df = df.groupby(['date', 'item_id']).agg({'qty': 'sum'})
     df.reset_index(inplace=True)
-    #print(df.head())
+    #print(df)
 
     # Pivot so that day sums of all item quantities are aligned on the same row with the date
     pivot_df = df.pivot(index = 'date', columns = 'item_id', values = 'qty')
     min_max = pd.DataFrame(columns = ['item_id', '80', '90'])
+    #print(pivot_df)
 
-    for i in range(1, len(pivot_df.columns)):
+    for i in range(0, len(pivot_df.columns)):
         min_max = min_max.append({'item_id': str(pivot_df.columns[i]),
                                   '80': np.nanpercentile(pivot_df[pivot_df.columns[i]], 80), 
                                   '90': np.nanpercentile(pivot_df[pivot_df.columns[i]], 90)}, 
                                  ignore_index = True)
 
-    #print(min_max.head())
+    #print(min_max)
     case_info = case_info[['case_qty']]
     min_max = min_max.set_index('item_id').join(case_info, how='left')
 
@@ -286,6 +287,7 @@ def min_max_from_hashkey(hashkey, case_info):
     min_max['max'] = min_max.apply(lambda row: to_int(np.ceil(row['90'] / row['case_qty'])), axis = 1)
     
     print('Done')
+    #print(min_max)
 
     return min_max[['min', 'max']]
 
@@ -468,7 +470,7 @@ def continuous_slotting(hashkey, pf, cust):
 
         
         # Create the right pickface given the number of slots
-        pickface = switch_pf(pf[p], cust, 1, 15)
+        pickface = switch_pf(pf[p], cust, 1, [12, 15, 15])
         # Put the items into the pickface
         items = top[p].join(item_info.set_index('item_id'), how = 'left')
         pickface.populate(top[p])
@@ -632,7 +634,7 @@ def slotting(hashkey, pf, cust, **kwargs):
         # Remove all the used order configurations
         order_count = order_count[order_count.visited != True]
 
-        pickf = switch_pf(pf[p], cust, 1, 15)
+        pickf = switch_pf(pf[p], cust, 1, [12, 15, 15])
         print(top[p])
         pickf.populate(top[p])
         pickf.display()
