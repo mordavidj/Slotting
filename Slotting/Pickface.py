@@ -41,18 +41,22 @@ class Pickface():
         '''
         print('')
         print(f'Customer: {self.cust}')
-        print('|||||||||||||||||||||||||||||||||||||||||||||||')
+        print('###############################################')
         
         for b in range(self.bays):
             row_del = ''
             for r in range(self.bay_rows - 1, -1, -1):
                 print(row_del) 
                 for c in range(self.bay_cols):
-                    print(f'## {str(b+1).zfill(2)}.{ROWS[r]}{str(c+1).zfill(2)}: {self.slots[b][r][c].id} ##', end='')
+                    if self.slots[b][r][c] is not None:
+                        print(f'| {str(b+1).zfill(2)}.{ROWS[r]}{str(c+1).zfill(2)}: {self.slots[b][r][c].id} |', end='')
+                    else:
+                        print(f'| {str(b+1).zfill(2)}.{ROWS[r]}{str(c+1).zfill(2)}: None    |', end='')
 
                 row_del = '\n-----------------------------------------------'
 
-            print('\n|||||||||||||||||||||||||||||||||||||||||||||||')
+
+            print('\n###############################################')
 
 
     def list_items(self):
@@ -64,7 +68,8 @@ class Pickface():
         for b in range(self.bays):
             for r in range(self.bay_rows):
                 for c in range(self.bay_cols):
-                    items.append(self.slots[b][r][c].id)
+                    if self.slots[b][r][c] is not None:
+                        items.append(self.slots[b][r][c].id)
 
         return items
 
@@ -218,6 +223,7 @@ class Pickface():
 
                     if r % len(self.row_priority) == 0:
                         r %= len(self.row_priority)
+
 
 
     def load(self):
