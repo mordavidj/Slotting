@@ -558,43 +558,43 @@ def slotting(hashkey, pf, cust, **kwargs):
         for ind, row in order_count.iterrows():
             items = ind.split(';')
 
-            # if there aren't enough spaces to hold the next order configuration, store it and skip for now
+            
+            # if there aren't enough spaces to hold the next order configuration...
             if len(items) > (pf[p] - len(top[p])):
+                not_in = 0
                 for i in items:
-                    backup.append([i, row['order_count']])
-                
-                continue
+                    if i not in list(top[p]['item_id']):
+                        not_in += 1
+
+                if not_in > (pf[p] - len(top[p])):
+                    for i in items:
+                        backup.append([i, row['order_count']])
+
+                    continue
 
             # track if order configuration has been accounted for
             order_count.at[ind, 'visited'] = True
             h2 = []
 
             for i in items:
-                # if there are still open slots...
-                if len(top[p].index) < pf[p]:
 
-                    # add the count if the item is already in the pickface
-                    if i in list(top[p]['item_id']):
-                        #print(top[p])
-                        ind_i = top[p][top[p]['item_id'] == i].index.values[0]
-                        tmp = top[p].at[ind_i, 'orders']
+                # add the count if the item is already in the pickface
+                if i in list(top[p]['item_id']):
+                    #print(top[p])
+                    ind_i = top[p][top[p]['item_id'] == i].index.values[0]
+                    tmp = top[p].at[ind_i, 'orders']
 
-                        top[p].at[ind_i, 'orders'] = tmp + row['order_count']
-                        top[p].at[ind_i, 'order_configs'].append((str(configs), row['order_count']))
-
-                    else:
-                        tmp = pd.DataFrame([[i, row['order_count'], [(str(configs), row['order_count'])]]], 
-                                           columns = ['item_id', 'orders', 'order_configs'])
-                        top[p] = top[p].append(tmp, ignore_index = True)
+                    top[p].at[ind_i, 'orders'] = tmp + row['order_count']
+                    top[p].at[ind_i, 'order_configs'].append((str(configs), row['order_count']))
 
                 else:
-                    break
+                    tmp = pd.DataFrame([[i, row['order_count'], [(str(configs), row['order_count'])]]], 
+                                        columns = ['item_id', 'orders', 'order_configs'])
+                    top[p] = top[p].append(tmp, ignore_index = True)
+
 
             configs += 1
 
-            # break the loop if there are no more slots
-            if len(top[p].index) >= pf[p]:
-                break
 
         print('')
         while len(top[p].index) < pf[p]:
@@ -607,6 +607,7 @@ def slotting(hashkey, pf, cust, **kwargs):
 
             if len(backup) == 0:
                 break
+
 
         # Calculate the percent of total orders served from the pickface
         sum = top[p].orders.sum()
@@ -644,3 +645,26 @@ def slotting(hashkey, pf, cust, **kwargs):
     return pickfaces
        
 
+
+def evaluate_pf(hashkey, pf: Pickface):
+    '''Evaluate a pickface using a hashkey of orders.
+
+    '''
+    print('\nEvaluating pickface')
+    items = pf.list_items()
+
+    order_count = hashkey.order_config.value_counts().to_frame()\
+        .rename(columns={'order_config': 'order_count'})
+    print(order_count)
+    ord_serv = 0
+    ord_sum = order_count.order_count.sum()
+
+    for index, row in order_count.iterrows():
+        if all(x in items for x in index.split(';')):
+            ord_serv += row['order_count']
+            #print(index)
+
+    print('\nTotal Orders: {0:,}'.format(ord_sum))
+    print('Orders Served by PF: {0:,}'.format(ord_serv))
+    ord_per = ord_serv / ord_sum
+    print('% Orders Served: {0:.2%}'.format(ord_per))
