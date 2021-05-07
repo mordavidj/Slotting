@@ -101,14 +101,18 @@ def nuskin():
     ignored = ['01003882', '01003883', '01102892', '01003904', 
                '01310011', '01003440', '01003901', '01003529']
 
-    pf = slotting(hashkey, [27, 27], 'NuSkin', ignore = ignored)
+    pf = slotting(hashkey, [27], 'NuSkin', ignore = ignored)
+
+    pf1 = Pickface()
+    pf1.from_csv(r"..\..\..\Desktop\Nuskin-Memphis-27.csv")
+    evaluate_pf(hashkey, pf1)
 
     
 
 def truvision():
-    pfs = [9]
+    pfs = [27]
         
-    #hashkey = generate_hashkey_ASC(r"C:\Users\David.Moreno\OneDrive - Visible SCM\Desktop\truvision_asc_orders_and_quantities.csv", 'truvision')
+    #hashkey = generate_hashkey_ASC(r"..\..\..\Desktop\truvision_asc_orders_and_quantities.csv", 'truvision')
 
     #print(hashkey.head())
 
@@ -116,12 +120,14 @@ def truvision():
 
     #hashkey.to_csv('data/truvision_hashkey.csv')
 
-    #hashkey = load_hashkey('data/truvision_hashkey.csv')
+    hashkey = load_hashkey('data/truvision_hashkey.csv')
 
-    #pf = slotting(hashkey, pfs, 'TruVision')
+    pf = slotting(hashkey, pfs, 'TruVision', [13, 15, 15])
     #pf[0].to_csv(r"..\..\..\Desktop")
-    new_pf = Pickface().from_csv(r"..\..\..\Desktop\TruVision-9.csv")
-
+    #new_pf = Pickface()
+    #new_pf.from_csv(r"..\..\..\Desktop\TruVision-9.csv")
+    #new_pf.display()
+    #evaluate_pf(hashkey, new_pf)
     #pf2 = continuous_slotting(hashkey, [48, 32], 'TruVision_continuous')
 
 

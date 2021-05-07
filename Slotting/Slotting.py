@@ -43,7 +43,7 @@ def load_hashkey(filepath):
     '''Load a hashkey that has already been generated.
 
     '''
-    print(f'\nLoading Power BI Hashkey: {filepath}')
+    print(f'\nLoading Hashkey: {filepath}')
 
     df = pd.read_csv(filepath,
                      dtype = 'string')
@@ -485,7 +485,7 @@ def continuous_slotting(hashkey, pf, cust):
 
 
 
-def slotting(hashkey, pf, cust, **kwargs):
+def slotting(hashkey, pf, cust, row_height, **kwargs):
     '''Builds the desired pickfaces based on the most popular order configurations.
 
     '''
@@ -622,9 +622,10 @@ def slotting(hashkey, pf, cust, **kwargs):
         
         ord_serv = order_count[order_count.visited == True].order_count.sum()
         print('\nTotal Orders: {0:,}'.format(ord_sum))
-        print('Orders Served by PF: {0:,}'.format(ord_serv))
+        print('Ideal Conditions:')
+        print('\tOrders Served by PF: {0:,}'.format(ord_serv))
         ord_per = ord_serv / ord_sum
-        print('% Orders Served: {0:.2%}'.format(ord_per))
+        print('\t% Orders Served: {0:.2%}'.format(ord_per))
 
         sub_hashkey = hashkey[hashkey.order_config.isin(visited)]
         #print(sub_hashkey)
@@ -635,10 +636,11 @@ def slotting(hashkey, pf, cust, **kwargs):
         # Remove all the used order configurations
         order_count = order_count[order_count.visited != True]
 
-        pickf = switch_pf(pf[p], cust, 1, [12, 15, 15])
+        pickf = switch_pf(pf[p], cust, 1, row_height)
         print(top[p])
         pickf.populate(top[p])
         pickf.display()
+        evaluate_pf(hashkey, pickf)
         pickf.to_csv()
         pickfaces.append(pickf)
 

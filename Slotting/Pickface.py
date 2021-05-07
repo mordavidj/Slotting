@@ -101,18 +101,19 @@ class Pickface():
                     for c in range(self.bay_cols):
                         item = self.slots[b][r][c]
                         #print(item)
-                        writer.writerow([item.id, 
-                                         item.desc,
-                                         f'{str(b+1).zfill(2)}.{ROWS[r]}{str(c+1).zfill(2)}',
-                                         b + 1, 
-                                         ROWS[r], 
-                                         c + 1, 
-                                         item.min, 
-                                         item.max,
-                                         item.case_qty,
-                                         item.width,
-                                         item.length,
-                                         item.height])
+                        if item is not None:
+                            writer.writerow([item.id, 
+                                             item.desc,
+                                             f'{str(b+1).zfill(2)}.{ROWS[r]}{str(c+1).zfill(2)}',
+                                             b + 1, 
+                                             ROWS[r], 
+                                             c + 1, 
+                                             item.min, 
+                                             item.max,
+                                             item.case_qty,
+                                             item.width,
+                                             item.length,
+                                             item.height])
 
         print('Done')
               
@@ -201,6 +202,7 @@ class Pickface():
 
             for index, row in splits[b].iterrows():
                 item_info = items.loc[index].to_dict()
+                slotted = False
 
                 item = Item(id = index,
                             description = item_info['description'],
@@ -211,19 +213,33 @@ class Pickface():
                             min = item_info['min'],
                             max = item_info['max'])
                 
-                row_pr = self.row_priority[r]
-                col_pr = self.col_priority[c]
-                self.slots[b][row_pr][col_pr] = item
+                for row in self.row_priority:
+                    if self.row_height[row] >= item.height:
+                        for col in self.col_priority:
+                            if self.slots[b][row][col] is None:
+                                self.slots[b][row][col] = item
+                                slotted = True
+                                break
+                    if slotted:
+                        break
 
-                c += 1 
+                if not slotted:
+                    print(f'Item {item.id} could not be slotted.')
 
-                if c % len(self.col_priority) == 0:
-                    c %= len(self.col_priority)
-                    r += 1
+                self.display()
+                #row_pr = self.row_priority[r]
+                #col_pr = self.col_priority[c]
+                #self.slots[b][row_pr][col_pr] = item
 
-                    if r % len(self.row_priority) == 0:
-                        r %= len(self.row_priority)
+                
+                #c += 1 
 
+                #if c % len(self.col_priority) == 0:
+                #    c %= len(self.col_priority)
+                #    r += 1
+
+                #    if r % len(self.row_priority) == 0:
+                #        r %= len(self.row_priority)
 
 
     def load(self):
@@ -252,8 +268,7 @@ class Pickface():
             for r in range(self.bay_rows):
                 for c in range(self.bay_cols):
                     if i == slots[b][r][c].id:
-                        return {'slot': f'{str(b+1).zfill(2)}.{ROWS[r]}{str(c+1).zfill(2)}',
-                                'info': slots[b][r][c].get_info()}
+                        return slots[b][r][c].get_info()
 
         return -1
 
@@ -265,7 +280,7 @@ class Pickface():
         bay, row_col = slot.split('.')
         row = row_col[:1]
         col = row_col[1:]
-
+        
         b = int(bay)
         r = ROWS.index(row)
         c = int(col)
