@@ -505,6 +505,7 @@ def slotting(hashkey, pf, cust, row_height, **kwargs):
         raise Exception('"cust" is required for documentation purposes.')
     
     ignored = kwargs.get('ignore')
+    required = kwargs.get('require')
 
     #print(hashkey)
     order_count = hashkey.order_config.value_counts().to_frame()\
@@ -627,8 +628,12 @@ def slotting(hashkey, pf, cust, row_height, **kwargs):
         ord_per = ord_serv / ord_sum
         print('\t% Orders Served: {0:.2%}'.format(ord_per))
 
+        #print('\tMedian Orders/Day: {0:,}'.format())
+
         sub_hashkey = hashkey[hashkey.order_config.isin(visited)]
-        #print(sub_hashkey)
+
+        print('\tMedian Orders/Day: {0:,}'.format(int(sub_hashkey['date'].value_counts().median())))
+
         min_max = min_max_from_hashkey(sub_hashkey, item_info)
         print(min_max)
         #print(top[p])
