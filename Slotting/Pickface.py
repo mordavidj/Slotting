@@ -5,6 +5,7 @@ from Item import *
 import csv
 import datetime
 import os
+import numpy as np
 
 ROWS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']
 
@@ -214,7 +215,7 @@ class Pickface():
                             max = item_info['max'])
                 
                 for row in self.row_priority:
-                    if self.row_height[row] >= item.height:
+                    if self.row_height[row] >= item.height or item.height is np.nan:
                         for col in self.col_priority:
                             if self.slots[b][row][col] is None:
                                 self.slots[b][row][col] = item
@@ -226,21 +227,7 @@ class Pickface():
                 if not slotted:
                     print(f'Item {item.id} could not be slotted.')
 
-                self.display()
-                #row_pr = self.row_priority[r]
-                #col_pr = self.col_priority[c]
-                #self.slots[b][row_pr][col_pr] = item
-
-                
-                #c += 1 
-
-                #if c % len(self.col_priority) == 0:
-                #    c %= len(self.col_priority)
-                #    r += 1
-
-                #    if r % len(self.row_priority) == 0:
-                #        r %= len(self.row_priority)
-
+           
 
     def load(self):
         '''Create empty items for every slot in the pickface.
