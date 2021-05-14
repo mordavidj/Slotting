@@ -25,16 +25,21 @@ class Pickface():
     row_priority: list
     col_priority: list
 
-    def __init__(self):
-        self.bays = 0
-        self.bay_cols = 0
-        self.bay_rows = 0
-        self.row_height = []
-        self.depth = 0
-        self.slots = []
-        self.cust = ''
-        self.row_priority = []
-        self.col_priority = []
+
+    def __init__(self, bays: int = 0, bay_cols: int = 0, bay_rows: int = 0, 
+                 row_height: list = [], depth: int = 0, slots: list = [], 
+                 cust: str = '', row_priority: list = [], 
+                 col_priority: list = []):
+        self.bays = bays
+        self.bay_cols = bay_cols
+        self.bay_rows = bay_rows
+        self.row_height = row_height
+        self.depth = depth
+        self.slots = slots
+        self.cust = cust
+        self.row_priority = row_priority
+        self.col_priority = col_priority
+
 
 
     def display(self):
@@ -57,8 +62,8 @@ class Pickface():
 
                 row_del = '\n-----------------------------------------------'
 
-
             print('\n###############################################')
+
 
 
     def list_items(self):
@@ -74,6 +79,7 @@ class Pickface():
                         items.append(self.slots[b][r][c].id)
 
         return items
+
 
 
     def to_csv(self, dir = 'data/'):
@@ -156,11 +162,11 @@ class Pickface():
 
             self.load()
 
+            #skip the empty line and other table header
             next(reader)
             next(reader)
 
             for r in reader:
-                #r = next(reader)
 
                 id = str(r[0])
                 desc = str(r[1])
@@ -187,9 +193,6 @@ class Pickface():
                 self.slots[bay][row][col] = item
                 #print(self.slots)
                  
-                
-
-
         print('Done')
         #self.display()
 
@@ -311,13 +314,13 @@ class Pickface():
         print('% Orders Served: {0:.2%}'.format(ord_per))
 
         visited = list(order_count[order_count.visited == True].index)
+        sub_val_count = sub_hashkey['date'].value_counts()
 
-        sub_hashkey = hashkey[hashkey.order_config.isin(visited)]
-        min = int(round(sub_hashkey['date'].value_counts().min()))
-        q1 = int(round(np.nanpercentile(sub_hashkey['date'].value_counts(), 25)))
-        med = int(round(sub_hashkey['date'].value_counts().median()))
-        q3 = int(round(np.nanpercentile(sub_hashkey['date'].value_counts(), 75)))
-        max = int(round(sub_hashkey['date'].value_counts().max()))
+        min = int(round(sub_val_count.min()))
+        q1 = int(round(np.nanpercentile(sub_val_count, 25)))
+        med = int(round(sub_val_count.median()))
+        q3 = int(round(np.nanpercentile(sub_val_count, 75)))
+        max = int(round(sub_val_count.max()))
 
         print('\tOrders/Day:')
         print(f'\tMin = {min:,}')

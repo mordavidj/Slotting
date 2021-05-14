@@ -130,9 +130,9 @@ def generate_hashkey_ASC(filepath, cust):
     
 
     kit_sql = '''SELECT k.kit_id, k.status
-                  FROM Kit AS k
-                  INNER JOIN Customer AS c ON k.customer = c.customer_id
-                  WHERE c.customer = ucase('{0:s}');'''.format(cust)
+                 FROM Kit AS k
+                 INNER JOIN Customer AS c ON k.customer = c.customer_id
+                 WHERE c.customer = ucase('{0:s}');'''.format(cust)
 
     kits = pd.read_sql(kit_sql, cnxn).set_index('kit_id')
 
@@ -188,7 +188,7 @@ def generate_hashkey_ASC(filepath, cust):
 
 
 
-def generate_hashkey_SQL(filepath):
+def generate_hashkey_from_SQL(filepath):
     '''Take an exported file from the SQL server and generate hashkeys and 
     order configs
     
@@ -286,7 +286,7 @@ def to_int(val):
     '''Format NaN's, None's, and others into integers
     
     '''
-    if math.isnan(val) or val is None:
+    if math.isnan(val) or val is None or pd.isna(val):
         return ''
     else:
         return int(val)
@@ -619,12 +619,13 @@ def slotting(hashkey, pf, cust, row_height, **kwargs):
         print('\t% Orders Served: {0:.2%}'.format(ord_per))
 
         sub_hashkey = hashkey[hashkey.order_config.isin(visited)]
+        sub_val_count = sub_hashkey['date'].value_counts()
 
-        min = int(sub_hashkey['date'].value_counts().min())
-        q1 = int(np.nanpercentile(sub_hashkey['date'].value_counts(), 25))
-        med = int(sub_hashkey['date'].value_counts().median())
-        q3 = int(np.nanpercentile(sub_hashkey['date'].value_counts(), 75))
-        max = int(sub_hashkey['date'].value_counts().max())
+        min = int(round(sub_val_count.min()))
+        q1 = int(round(np.nanpercentile(sub_val_count, 25)))
+        med = int(round(sub_val_count.median()))
+        q3 = int(round(np.nanpercentile(sub_val_count, 75)))
+        max = int(round(sub_val_count.max()))
 
         print('\tOrders/Day:')
         print(f'\tMin = {min:,}')
@@ -634,7 +635,7 @@ def slotting(hashkey, pf, cust, row_height, **kwargs):
         print(f'\tMax = {max:,}')
 
         min_max = min_max_from_hashkey(sub_hashkey, item_info)
-        print(min_max)
+        #print(min_max)
 
         top[p] = top[p].join(min_max, how = "left")
 

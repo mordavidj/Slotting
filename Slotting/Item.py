@@ -14,9 +14,9 @@ class Item():
     max: int
 
 
-    def __init__(self, id = 'ID', description = '', case_qty = 0, 
-                 height = 0.0, width = 0.0, length = 0.0, min = 0, max = 0, 
-                 **kwargs):
+    def __init__(self, id: str = 'ID', description: str = '', case_qty: int = 0, 
+                 height: float = 0.0, width: float = 0.0, length: float = 0.0, 
+                 min: int = 0, max: int = 0, **kwargs):
 
         self.id = id
         self.desc = description

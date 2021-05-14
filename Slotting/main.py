@@ -45,16 +45,9 @@ def waldo():
 
 def level():
 
-    weeks = 6
-    pf = 48
-
-    df = pd.read_csv('data/LeVel Optimization Hashkey.csv',
-                     dtype = 'string')\
-                         .rename(columns = {'Created Date': 'datetime',
-                                            'Optimization Hash Key': 'hashkey'})
-
-    df['datetime'] = pd.to_datetime(df['datetime'])
-    df['date'] = df['datetime'].dt.date
+    df = load_powerBI_hashkey('data/LeVel Optimization Hashkey.csv')
+    print(df)
+    df['datetime'] = pd.to_datetime(df['date'])
     df['day'] = df['datetime'].dt.day
 
     sub = df[df.day.isin([5, 15, 25])]
@@ -63,10 +56,10 @@ def level():
     print(sub.date.value_counts())
     print(norm.date.value_counts())
 
-    pf_norm = slotting(norm, [48], 'LeVel-normal')
-    pf_sub = slotting(sub, [48], 'LeVel-sub')
+    pf_norm = slotting(norm, [48], 'LeVel-normal', [15, 15, 40])
+    pf_sub = slotting(sub, [48], 'LeVel-sub', [15, 15, 40])
 
-    pf2 = continuous_slotting(hashkey, [48, 32], 'TruVision_continuous')
+    #pf2 = continuous_slotting(hashkey, [48, 32], 'TruVision_continuous')
 
     norm_lst = pf_norm[0].list_items()
     sub_lst = pf_sub[0].list_items()
@@ -107,10 +100,24 @@ def nuskin():
     pf1.from_csv(r"..\..\..\Desktop\Nuskin-Memphis-27.csv")
     evaluate_pf(hashkey, pf1)
 
-    
+ 
+def epicure():
+    kits_from_ASC_to_SQL(r"..\..\..\Desktop\epicure_kit_BOM.csv")
+    pfs = [48]
+
+    #hashkey = generate_hashkey_ASC(r'..\..\..\Desktop\epicure_orders_and_quantities.csv' , 'Epicure')
+
+    #hashkey = hashkey.set_index('order_number')
+
+    #hashkey.to_csv('data/epicure_hashkey.csv')
+
+    hashkey = load_hashkey('data/epicure_hashkey.csv')
+
+    pf = slotting(hashkey, pfs, 'Epicure', [15, 15, 15])
+
 
 def truvision():
-    pfs = [27]
+    pfs = [9]
         
     #hashkey = generate_hashkey_ASC(r"..\..\..\Desktop\truvision_asc_orders_and_quantities.csv", 'truvision')
 
@@ -122,13 +129,41 @@ def truvision():
 
     hashkey = load_hashkey('data/truvision_hashkey.csv')
 
-    pf = slotting(hashkey, pfs, 'TruVision', [13, 15, 15])
+    required = ['PROP65']
+
+    pf = slotting(hashkey, pfs, 'TruVision', [13, 15, 15], require = required)
     #pf[0].to_csv(r"..\..\..\Desktop")
-    #new_pf = Pickface()
-    #new_pf.from_csv(r"..\..\..\Desktop\TruVision-9.csv")
-    #new_pf.display()
-    #evaluate_pf(hashkey, new_pf)
+    new_pf = Pickface()
+    new_pf.from_csv(r"..\..\..\Desktop\Truvision_PFs-11.csv")
+    new_pf.display()
+    new_pf.evaluate(hashkey)
+
     #pf2 = continuous_slotting(hashkey, [48, 32], 'TruVision_continuous')
+
+
+
+def lifevan():
+    kits_from_ASC_to_SQL(r"..\..\..\Desktop\lifevan_kit_BOM.csv")
+
+
+
+def manscaped():
+    kits_from_ASC_to_SQL(r"..\..\..\Desktop\manscaped_kit_BOM.csv")
+
+
+
+def amare():
+    kits_from_ASC_to_SQL(r"..\..\..\Desktop\amare_kit_BOM.csv")
+
+
+
+def bodyguardz():
+    kits_from_ASC_to_SQL(r"..\..\..\Desktop\bodyguardz_kit_BOM.csv")
+
+
+
+def mfgdot():
+    kits_from_ASC_to_SQL(r"..\..\..\Desktop\mfgdot_kit_BOM.csv")
 
 
 
@@ -185,7 +220,9 @@ def kits_from_ASC(filepath, cust):
 
 
 
-def kits_from_ASC_to_SQL(filepath, cust):
+def kits_from_ASC_to_SQL(filepath):
+    print(f'Getting kits from ASC for SQL... ', end = '')
+
     df = pd.read_csv(filepath,
                       dtype = "string")
 
@@ -193,16 +230,34 @@ def kits_from_ASC_to_SQL(filepath, cust):
     kits = []   # Stores all items in the desired format
     kiq = []    # Keeps each order together in one row
     kit = ''    # Store the kit id while adding items
+    cust = df.iat[0, 0].upper()
+
+    # Get the customer ID from the DB
+    cnxn = connect_db()
+    if type(cnxn) is int:
+        return
+
+    crsr = cnxn.cursor()
+
+    cust_sql = '''SELECT c.customer_id
+                  FROM Customer AS c
+                  WHERE c.customer = '{0:s}';'''.format(cust)
+
+    crsr.execute(cust_sql)
+   
+    for row in crsr.fetchall():
+        cust_id = row.customer_id
 
     for index, row in df.iterrows():
-        
-        # If the it item can be converted into a date, it's a new item
-        if row['VMI_CUSTID'] == cust:
-            kit = row['ITEMID']
-            kits.append([row['VMI_CUSTID'], kit, row['DESCRIPTION']])
 
-        else:
-            kiq.append([kit, row['VMI_CUSTID'], row["ITEMID"]])
+        if pd.notna(row['VMI_CUSTID']):
+            # If the it item can be converted into a date, it's a new item
+            if row['VMI_CUSTID'] == cust:
+                kit = row['ITEMID']
+                kits.append([cust_id, kit, row['DESCRIPTION']])
+
+            else:
+                kiq.append([kit, row['VMI_CUSTID'], row["ITEMID"]])
 
 
     # save the items into dataframes
@@ -214,18 +269,26 @@ def kits_from_ASC_to_SQL(filepath, cust):
 
     df_kits.to_csv(f'data/{cust}_Kit_SQL.csv')
     df_kiq.to_csv(f'data/{cust}_Kits_Items_SQL.csv')
+
     print('Done')
 
 
 
 def main():
+    #level()
     #level_continuous()
     #waldo()
     #min_max_from_hashkey('do')
     #nuskin()
-    truvision()   
-    #kits_from_ASC_to_SQL(r"..\..\..\Desktop\truvision_kit.csv", 'TRUVISION') 
-   
+    #epicure()
+    #truvision()   
+    #manscaped() 
+    #amare()
+    #bodyguardz()
+    #lifevan()
+    mfgdot()
+
+
 
 import tkinter as tk
 
