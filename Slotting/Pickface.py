@@ -3,7 +3,7 @@ pd.set_option('max_columns', None)
 import math
 from Item import *
 import csv
-import datetime
+import datetime as dt
 import os
 import numpy as np
 
@@ -14,6 +14,7 @@ class Pickface():
     '''Pickface class that stores info about the pickface and stores an array of items.
 
     '''
+    edit_date: dt.datetime
     bays: int 
     bay_cols: int
     bay_rows: int
@@ -43,16 +44,16 @@ class Pickface():
         print('')
         print(f'Customer: {self.cust}')
         print('###############################################')
-        
+        nope = ''
         for b in range(self.bays):
             row_del = ''
             for r in range(self.bay_rows - 1, -1, -1):
                 print(row_del) 
                 for c in range(self.bay_cols):
                     if self.slots[b][r][c] is not None:
-                        print(f'| {str(b+1).zfill(2)}.{ROWS[r]}{str(c+1).zfill(2)}: {self.slots[b][r][c].id} |', end='')
+                        print(f'| {str(b+1).zfill(2)}.{ROWS[r]}{str(c+1).zfill(2)}: {self.slots[b][r][c].id.rjust(10)} |', end='')
                     else:
-                        print(f'| {str(b+1).zfill(2)}.{ROWS[r]}{str(c+1).zfill(2)}: None    |', end='')
+                        print(f'| {str(b+1).zfill(2)}.{ROWS[r]}{str(c+1).zfill(2)}: {nope.rjust(10)} |', end='')
 
                 row_del = '\n-----------------------------------------------'
 
@@ -84,14 +85,13 @@ class Pickface():
 
         with open(filepath, 'w', newline='') as f:
             writer = csv.writer(f, delimiter=',', quotechar='|')
-            writer.writerow(['Customer:', self.cust, datetime.datetime.now()])
-            writer.writerow(['Bays:', self.bays])
-            writer.writerow(['Columns:', self.bay_cols])
-            writer.writerow(['Col Priority:', ';'.join(map(str, self.col_priority))])
-            writer.writerow(['Rows:', self.bay_rows])
-            writer.writerow(['Row Height:', ';'.join(map(str, self.row_height))])
-            writer.writerow(['Row Priority:', ';'.join(map(str, self.row_priority))])
-            writer.writerow(['Depth:', self.depth])
+            writer.writerow(['Date', 'Customer', 'Bays', 'Columns', 
+                             'Col Priority', 'Rows', 'Row Height', 
+                             'Row Priority', 'Depth'])
+            writer.writerow([dt.datetime.now(), self.cust, self.bays, 
+                             self.bay_cols, ';'.join(map(str, [x + 1 for x in self.col_priority])), 
+                             self.bay_rows, ';'.join(map(str, self.row_height)), 
+                             ';'.join([ROWS[x] for x in self.row_priority]), self.depth])
             writer.writerow([])
             writer.writerow(['Item', 'Description', 'Location', 'Bay', 'Row', 
                              'Column', 'Min', 'Max', 'Case Qty', 'Width', 
@@ -129,20 +129,23 @@ class Pickface():
         with open(filepath, 'r', newline = '') as f:
             reader = csv.reader(f)
             try:
-                cust = next(reader)[1]
-                bays = next(reader)[1]
-                cols = next(reader)[1]
-                col_pr = next(reader)[1].split(';')
-                rows = next(reader)[1]
-                row_he = next(reader)[1].split(';')
-                row_pr = next(reader)[1].split(';')
-                depth = next(reader)[1]
+                next(reader) #skip table header
+                info = next(reader)
+
+                cust = info[1]
+                bays = info[2]
+                cols = info[3]
+                col_pr = info[4].split(';')
+                rows = info[5]
+                row_he = info[6].split(';')
+                row_pr = info[7].split(';')
+                depth = info[8]
 
                 self.bays = int(bays)
                 self.bay_cols = int(cols)
-                self.col_priority = map(int, col_pr)
+                self.col_priority = [x - 1 for x in map(int, col_pr)]
                 self.bay_rows = int(rows)
-                self.row_priority = map(int, row_pr)
+                self.row_priority = [ROWS.index(x) for x in row_pr]
                 self.row_height = map(float, row_he)
                 self.depth = int(depth)
                 self.cust = cust.upper()
@@ -159,26 +162,27 @@ class Pickface():
             for r in reader:
                 #r = next(reader)
 
-                try:
-                    id = str(r[0])
-                    desc = str(r[1])
-                    bay = int(r[3]) - 1
-                    row = ROWS.index(r[4])
-                    col = int(r[5]) - 1
-                    min = int(r[6])
-                    max = int(r[7])
-                    case_qty = int(float(r[8]))
-                    width = float(r[9])
-                    length = float(r[10])
-                    height = float(r[11])
+                id = str(r[0])
+                desc = str(r[1])
+                bay = int(r[3]) - 1
+                row = ROWS.index(r[4])
+                col = int(r[5]) - 1
+                min = int(r[6])
+                max = int(r[7])
+                case_qty = int(float(r[8]))
+                width = float(r[9])
+                length = float(r[10])
+                height = float(r[11])
 
+                try:
+                    item = Item(id = id, description = desc, height = height, 
+                            width = width, length = length, min = min, 
+                            max = max, case_qty = case_qty)
+                    
                 except:
                     print(f'\nInvalid item read:\n{r}')
                     continue
 
-                item = Item(id = id, description = desc, height = height, 
-                            width = width, length = length, min = min, 
-                            max = max, case_qty = case_qty)
                 #item.display()
                 self.slots[bay][row][col] = item
                 #print(self.slots)
@@ -187,7 +191,7 @@ class Pickface():
 
 
         print('Done')
-        self.display()
+        #self.display()
 
 
 
@@ -213,9 +217,12 @@ class Pickface():
                             height = item_info['height'],
                             min = item_info['min'],
                             max = item_info['max'])
-                
+
                 for row in self.row_priority:
-                    if self.row_height[row] >= item.height or item.height is np.nan:
+                    if item.height is None or\
+                        self.row_height[row] >= item.height \
+                        or math.isnan(item.height):
+
                         for col in self.col_priority:
                             if self.slots[b][row][col] is None:
                                 self.slots[b][row][col] = item
@@ -230,7 +237,7 @@ class Pickface():
            
 
     def load(self):
-        '''Create empty items for every slot in the pickface.
+        '''Create empty splaces for every slot in the pickface.
         
         '''
         for b in range(self.bays):
@@ -276,7 +283,49 @@ class Pickface():
             return slots[b][r][c].get_info()
 
         except:
-            raise Exception(f'Invalid Slot: {slot}')     
+            raise Exception(f'Invalid Slot: {slot}')   
+        
+    def evaluate(self, hashkey):
+        '''Evaluate a pickface using a hashkey of orders.
+
+        '''
+        print('\nEvaluating pickface')
+        items = self.list_items()
+
+        order_count = hashkey.order_config.value_counts().to_frame()\
+            .rename(columns={'order_config': 'order_count'})
+        order_count['visited'] = False
+        #print(order_count)
+        ord_serv = 0
+        ord_sum = order_count.order_count.sum()
+
+        for index, row in order_count.iterrows():
+            if all(x in items for x in index.split(';')):
+                order_count.at[index, 'visited'] = True
+                ord_serv += row['order_count']
+                #print(index)
+
+        print('\nTotal Orders: {0:,}'.format(ord_sum))
+        print('Orders Served by PF: {0:,}'.format(ord_serv))
+        ord_per = ord_serv / ord_sum
+        print('% Orders Served: {0:.2%}'.format(ord_per))
+
+        visited = list(order_count[order_count.visited == True].index)
+
+        sub_hashkey = hashkey[hashkey.order_config.isin(visited)]
+        min = int(round(sub_hashkey['date'].value_counts().min()))
+        q1 = int(round(np.nanpercentile(sub_hashkey['date'].value_counts(), 25)))
+        med = int(round(sub_hashkey['date'].value_counts().median()))
+        q3 = int(round(np.nanpercentile(sub_hashkey['date'].value_counts(), 75)))
+        max = int(round(sub_hashkey['date'].value_counts().max()))
+
+        print('\tOrders/Day:')
+        print(f'\tMin = {min:,}')
+        print(f'\t1Qt = {q1:,}')
+        print(f'\tMed = {med:,}')
+        print(f'\t3Qt = {q3:,}')
+        print(f'\tMax = {max:,}')
+
     
 
 class PF_9(Pickface):
