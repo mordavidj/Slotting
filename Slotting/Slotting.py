@@ -172,18 +172,7 @@ def generate_hashkey_ASC(filepath, cust):
 
             elif row['ORDERNUMBER'] in kit_id:
                 continue
-                #if kits.loc[row['ORDERNUMBER'], 'status'] != 'O':
-                #    sql = '''SELECT item FROM Kits_Items 
-                #             WHERE kit = '{0:s}';'''.format(row['ORDERNUMBER'])
 
-                #    res = crsr.execute(sql).fetchall()
-
-                #    for r in res:
-                #        if r[0] in dict.keys():
-                #            dict[r[0]] += int(r[1])
-
-                #        else:
-                #            dict[r[0]] = int(r[1])
 
     n_row.append(str)
     #print(tmp)
@@ -196,6 +185,7 @@ def generate_hashkey_ASC(filepath, cust):
     hashkey = hashkey[hashkey['hashkey'] != '']
     print('Done')
     return hashkey
+
 
 
 def generate_hashkey_SQL(filepath):
@@ -489,7 +479,6 @@ def slotting(hashkey, pf, cust, row_height, **kwargs):
     '''Builds the desired pickfaces based on the most popular order configurations.
 
     '''
-
     # convert the type to an iterable list
     if type(pf) is not list:
         pf = [pf]
@@ -504,6 +493,7 @@ def slotting(hashkey, pf, cust, row_height, **kwargs):
     if cust == '':
         raise Exception('"cust" is required for documentation purposes.')
     
+    # Get ignored or required items
     ignored = kwargs.get('ignore')
     required = kwargs.get('require')
 
@@ -538,14 +528,10 @@ def slotting(hashkey, pf, cust, row_height, **kwargs):
     if ignored:
         print('Removing orders with ignored items... ', end = '')
         for ind, row in order_count.iterrows():
-            for i in ignored:
-                if i in ind:
-                    #print(len(order_count))
-                    #print(ind)
-                    #print(row)
-                    order_count = order_count.drop(ind)
-                    #print(len(order_count))
-                    break
+            # If any items in the order_count index match, delete the configuration
+            if any(x in ignored for x in ind.split(';')):
+                order_count = order_count.drop(ind)
+
         print('Done')
 
     # loop through each pickface number and get those top X items
@@ -555,12 +541,19 @@ def slotting(hashkey, pf, cust, row_height, **kwargs):
         top.append(pd.DataFrame(columns = ['item_id', 'orders', 'order_configs']))
         backup = []
 
-        
+        if required:
+            for req in required:
+                tmp = pd.DataFrame([[req, 0, []]], 
+                                   columns = ['item_id', 'orders', 'order_configs'])
+                top[p] = top[p].append(tmp, ignore_index = True)
+
         for ind, row in order_count.iterrows():
             items = ind.split(';')
 
             
             # if there aren't enough spaces to hold the next order configuration...
+            # count the number of items missing and if they can fit in, add the config
+            # and items
             if len(items) > (pf[p] - len(top[p])):
                 not_in = 0
                 for i in items:
@@ -592,10 +585,8 @@ def slotting(hashkey, pf, cust, row_height, **kwargs):
                     tmp = pd.DataFrame([[i, row['order_count'], [(str(configs), row['order_count'])]]], 
                                         columns = ['item_id', 'orders', 'order_configs'])
                     top[p] = top[p].append(tmp, ignore_index = True)
-
-
+                    
             configs += 1
-
 
         print('')
         while len(top[p].index) < pf[p]:
@@ -624,20 +615,29 @@ def slotting(hashkey, pf, cust, row_height, **kwargs):
         ord_serv = order_count[order_count.visited == True].order_count.sum()
         print('\nTotal Orders: {0:,}'.format(ord_sum))
         print('Ideal Conditions:')
-        print('\tOrders Served by PF: {0:,}'.format(ord_serv))
         ord_per = ord_serv / ord_sum
         print('\t% Orders Served: {0:.2%}'.format(ord_per))
 
-        #print('\tMedian Orders/Day: {0:,}'.format())
-
         sub_hashkey = hashkey[hashkey.order_config.isin(visited)]
 
-        print('\tMedian Orders/Day: {0:,}'.format(int(sub_hashkey['date'].value_counts().median())))
+        min = int(sub_hashkey['date'].value_counts().min())
+        q1 = int(np.nanpercentile(sub_hashkey['date'].value_counts(), 25))
+        med = int(sub_hashkey['date'].value_counts().median())
+        q3 = int(np.nanpercentile(sub_hashkey['date'].value_counts(), 75))
+        max = int(sub_hashkey['date'].value_counts().max())
+
+        print('\tOrders/Day:')
+        print(f'\tMin = {min:,}')
+        print(f'\t1Qt = {q1:,}')
+        print(f'\tMed = {med:,}')
+        print(f'\t3Qt = {q3:,}')
+        print(f'\tMax = {max:,}')
 
         min_max = min_max_from_hashkey(sub_hashkey, item_info)
         print(min_max)
-        #print(top[p])
+
         top[p] = top[p].join(min_max, how = "left")
+
         # Remove all the used order configurations
         order_count = order_count[order_count.visited != True]
 
@@ -645,33 +645,9 @@ def slotting(hashkey, pf, cust, row_height, **kwargs):
         print(top[p])
         pickf.populate(top[p])
         pickf.display()
-        evaluate_pf(hashkey, pickf)
+        pickf.evaluate(hashkey)
         pickf.to_csv()
         pickfaces.append(pickf)
 
     return pickfaces
        
-
-
-def evaluate_pf(hashkey, pf: Pickface):
-    '''Evaluate a pickface using a hashkey of orders.
-
-    '''
-    print('\nEvaluating pickface')
-    items = pf.list_items()
-
-    order_count = hashkey.order_config.value_counts().to_frame()\
-        .rename(columns={'order_config': 'order_count'})
-    print(order_count)
-    ord_serv = 0
-    ord_sum = order_count.order_count.sum()
-
-    for index, row in order_count.iterrows():
-        if all(x in items for x in index.split(';')):
-            ord_serv += row['order_count']
-            #print(index)
-
-    print('\nTotal Orders: {0:,}'.format(ord_sum))
-    print('Orders Served by PF: {0:,}'.format(ord_serv))
-    ord_per = ord_serv / ord_sum
-    print('% Orders Served: {0:.2%}'.format(ord_per))
