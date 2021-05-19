@@ -27,12 +27,11 @@ def switch_pf(i, cust, depth, height):
         return Omni(cust, depth, height)
 
 
-def overlaying_slotting(hashkey, pf, cust):
+def overlaying_slotting(hashkey, pf, cust, row_height, **kwargs):
     '''Builds the desired pickfaces based on the most popular order configurations.
     It is "overlayed" because no items will repeat across any of the pickfaces, incomplete orders get passed to the next pickface.
 
     '''
-
     # convert the type to an iterable list
     if type(pf) is not list:
         pf = [pf]
@@ -43,168 +42,21 @@ def overlaying_slotting(hashkey, pf, cust):
             pf[i] = int(pf[i])
         except:
             raise TypeError(f'Pickface number {i + 1} was not valid.')
-
-    if cust == '':
-        raise Exception('"cust" is required for documentation purposes.')
     
-    # Create a table of the most popular order configurations.
-    order_count = hashkey.order_config.value_counts().to_frame()\
-        .rename(columns={'order_config': 'order_count'})
-    order_count['visited'] = False
+    # Connect to DB
+    cnxn = connect_db()
+    if type(cnxn) is int:
+        return
 
-    # Create a set of all the unique item id's for using across pickfaces
-    item_ids = set()
+    cust_sql = '''SELECT customer_id
+                  FROM Customer;'''
 
-    for index, row in order_count.iterrows():
-        for i in index.split(';'):
-            item_ids.add(i)
+    cust_df = pd.read_sql(cust_sql, cnxn)
 
-    items_df = pd.DataFrame(item_ids, columns = ['item_id'])\
-        .sort_values('item_id')\
-        .set_index('item_id')
+    custs = list(cust_df['customer_id'])
 
-    items_df['used'] = False
-    print(items_df)
-
-    print(order_count)
-
-
-    # Load the master case quantities for min-max calculations
-    #item_info = pd.read_excel('../../../Documents/Master Case info.xlsx',
-    #                     sheet_name = 'Case')[['item_id', 'case_qty']]
-
-
-    top = []        # Store top X items for each pickface
-    pickfaces = []  # Store each pickface
-    # Order sums for statistics reporting
-    ord_sum = order_count.order_count.sum()
-    backup = []     # Incomplete order configurations to use for later
-    configs = 0     # Number for tracking order configurations
-
-    # loop through each pickface number and get those top X items
-    for p in range(len(pf)):
-        
-        # each pickface is stored in its own dataframe
-        top.append(pd.DataFrame(columns = ['item_id', 'orders', 'order_configs']))
-        if backup:
-            # Add all the popular items from the last pass to this one
-            pass
-
-        for ind, row in order_count.iterrows():
-            items = ind.split(';')
-
-            # if there aren't enough spaces to hold the next order configuration, store it and skip for now
-            if len(items) > (pf[p] - len(top[p])):
-                for i in items:
-                    backup.append([i, row['order_count'], (configs, row['order_count'])])
-                
-                configs += 1
-                continue
-
-            # track if order configuration has been accounted for
-            order_count.at[ind, 'visited'] = True
-
-            for i in items:
-                # if there are still open slots...
-                if len(top[p].index) < pf[p]:
-
-                    # add the count if the item is already in the pickface
-                    if i in list(top[p]['item_id']):
-                        #print(top[p])
-                        ind_i = top[p][top[p]['item_id'] == i].index.values[0]
-                        tmp = top[p].at[ind_i, 'orders']
-
-                        top[p].at[ind_i, 'orders'] = tmp + row['order_count']
-                        top[p].at[ind_i, 'order_configs'].append((str(configs), row['order_count']))
-
-                    else:
-                        tmp = pd.DataFrame([[i, row['order_count'], [(str(configs), row['order_count'])]]], 
-                                           columns = ['item_id', 'orders', 'order_configs'])
-                        top[p] = top[p].append(tmp, ignore_index = True)
-
-                else:
-                    break
-
-            configs += 1
-
-            # break the loop if there are no more slots
-            if len(top[p].index) >= pf[p]:
-                break
-
-        print('')
-        while len(top[p].index) < pf[p]:
-            
-            if (backup[0][0] not in list(top[p].item_id)):
-                print(f'incomplete order configuration: {backup[0][0]}')
-                tmp = pd.DataFrame([backup[0].append((str(configs), 0))], columns = ['item_id', 'orders', 'order_configs'])
-                top[p] = top[p].append(tmp, ignore_index = True)
-            backup.pop(0)
-
-            if len(backup) == 0:
-                break
-
-        # Calculate the percent of orders per item within the pickface
-        sum = top[p].orders.sum()
-        top[p]['percent'] = top[p].apply(lambda row: row.orders / sum, axis = 1)
-
-        top[p] = top[p].sort_values('orders', ascending = False).set_index('item_id')
-        print(f'\nTop {len(top[p])} Items:\n{top[p]}')
-        #print(top[p])
-        #print(top[p]['percent'].sum())
-        #print(order_count)
-
-        visited = list(order_count[order_count.visited == True].index)
-        #print(visited)
-        
-        # Just some reporting statistics to know how many orders the PF could serve
-        ord_serv = order_count[order_count.visited == True].order_count.sum()
-        print('\nTotal Orders: {0:,}'.format(ord_sum))
-        print('Orders Served by PF: {0:,}'.format(ord_serv))
-        ord_per = ord_serv / ord_sum
-        print('% Orders Served: {0:.2%}'.format(ord_per))
-
-        # Calculate the min-max for the top X items using the hashkey
-        sub_hashkey = hashkey[hashkey.order_config.isin(visited)]
-        #min_max = min_max_from_hashkey(sub_hashkey, item_info)
-        #print(min_max)
-        
-        # Remove all the used order configurations
-        order_count = order_count[order_count.visited != True]
-
-        
-        # Create the right pickface given the number of slots
-        pickface = switch_pf(pf[p], cust, 1, [12, 15, 15])
-        # Put the items into the pickface
-        items = top[p].join(item_info.set_index('item_id'), how = 'left')
-        pickface.populate(top[p])
-        # Show the pickface in the console
-        pickface.display()
-        # Save the pickface info to a csv
-        pickface.to_csv()
-
-        pickfaces.append(pickface)
-
-    return pickfaces
-
-
-
-def slotting(hashkey, pf, cust, row_height, **kwargs):
-    '''Builds the desired pickfaces based on the most popular order configurations.
-
-    '''
-    # convert the type to an iterable list
-    if type(pf) is not list:
-        pf = [pf]
-
-    # Convert each item in pickface list to integer
-    for i in range(len(pf)):
-        try:
-            pf[i] = int(pf[i])
-        except:
-            raise TypeError(f'Pickface number {i + 1} was not valid.')
-
-    if cust == '':
-        raise Exception('"cust" is required for documentation purposes.')
+    if cust not in custs:
+        raise Exception(f'"cust" must be an ASC Customer ID.\n"{cust}" not recognized!')
     
     # Get ignored or required items
     ignored = kwargs.get('ignore')
@@ -218,16 +70,10 @@ def slotting(hashkey, pf, cust, row_height, **kwargs):
     print(order_count)
 
     # Connect to DB to get item info
-    cnxn = connect_db()
-    if type(cnxn) is int:
-        return
-
-    crsr = cnxn.cursor()
 
     item_sql = '''SELECT i.item_id, i.description, i.case_qty, i.width, i.length, i.height
                   FROM Item AS i
-                  INNER JOIN Customer AS c ON i.customer = c.customer_id
-                  WHERE c.customer = ucase('{0:s}');'''.format(cust)
+                  WHERE i.customer = ucase('{0:s}');'''.format(cust)
 
     item_info = pd.read_sql(item_sql, cnxn).set_index('item_id')
 
@@ -363,7 +209,190 @@ def slotting(hashkey, pf, cust, row_height, **kwargs):
         pickfaces.append(pickf)
 
     return pickfaces
-       
+
+
+
+def slotting(hashkey, pf, cust, row_height, **kwargs):
+    '''Builds the desired pickfaces based on the most popular order configurations.
+
+    '''
+    # convert the type to an iterable list
+    if type(pf) is not list:
+        pf = [pf]
+
+    # Convert each item in pickface list to integer
+    for i in range(len(pf)):
+        try:
+            pf[i] = int(pf[i])
+        except:
+            raise TypeError(f'Pickface number {i + 1} was not valid.')
+
+    # Connect to DB
+    cnxn = connect_db()
+    if type(cnxn) is int:
+        return
+
+    cust_sql = '''SELECT customer_id
+                  FROM Customer;'''
+
+    cust_df = pd.read_sql(cust_sql, cnxn)
+
+    custs = list(cust_df['customer_id'])
+
+    if cust not in custs:
+        raise Exception(f'"cust" must be an ASC Customer ID.\n"{cust}" not recognized!')
+    
+    # Get ignored or required items
+    ignored = kwargs.get('ignore')
+    required = kwargs.get('require')
+
+    #print(hashkey)
+    order_count = hashkey.order_config.value_counts().to_frame()\
+        .rename(columns={'order_config': 'order_count'})
+
+    order_count['visited'] = False
+    print(order_count)
+
+    # Connect to DB to get item info
+    item_sql = '''SELECT i.item_id, i.description, i.case_qty, i.width, i.length, i.height
+                  FROM Item AS i
+                  WHERE i.customer = ucase('{0:s}');'''.format(cust)
+
+    item_info = pd.read_sql(item_sql, cnxn).set_index('item_id')
+
+    top = []        # Store top X items for each pickface
+    pickfaces = []  # Store each pickface
+    # Order sums for statistics reporting
+    ord_sum = order_count.order_count.sum()
+    backup = []     # Incomplete order configurations to use for later
+
+    if ignored:
+        print('Removing orders with ignored items... ', end = '')
+        for ind, row in order_count.iterrows():
+            # If any items in the order_count index match, delete the configuration
+            if any(x in ignored for x in ind.split(';')):
+                order_count = order_count.drop(ind)
+
+        print('Done')
+
+    # loop through each pickface number and get those top X items
+    for p in range(len(pf)):
+        configs = 0 # Number for tracking order configurations
+        # each pickface is stored in its own dataframe
+        top.append(pd.DataFrame(columns = ['item_id', 'orders', 'order_configs']))
+        backup = []
+
+        if required:
+            for req in required:
+                tmp = pd.DataFrame([[req, 0, []]], 
+                                   columns = ['item_id', 'orders', 'order_configs'])
+                top[p] = top[p].append(tmp, ignore_index = True)
+
+        for ind, row in order_count.iterrows():
+            items = ind.split(';')
+
+            
+            # if there aren't enough spaces to hold the next order configuration...
+            # count the number of items missing and if they can fit in, add the config
+            # and items
+            if len(items) > (pf[p] - len(top[p])):
+                not_in = 0
+                for i in items:
+                    if i not in list(top[p]['item_id']):
+                        not_in += 1
+
+                if not_in > (pf[p] - len(top[p])):
+                    for i in items:
+                        backup.append([i, row['order_count']])
+
+                    continue
+
+            # track if order configuration has been accounted for
+            order_count.at[ind, 'visited'] = True
+            h2 = []
+
+            for i in items:
+
+                # add the count if the item is already in the pickface
+                if i in list(top[p]['item_id']):
+                    #print(top[p])
+                    ind_i = top[p][top[p]['item_id'] == i].index.values[0]
+                    tmp = top[p].at[ind_i, 'orders']
+
+                    top[p].at[ind_i, 'orders'] = tmp + row['order_count']
+                    top[p].at[ind_i, 'order_configs'].append((str(configs), row['order_count']))
+
+                else:
+                    tmp = pd.DataFrame([[i, row['order_count'], [(str(configs), row['order_count'])]]], 
+                                        columns = ['item_id', 'orders', 'order_configs'])
+                    top[p] = top[p].append(tmp, ignore_index = True)
+                    
+            configs += 1
+
+        print('')
+        while len(top[p].index) < pf[p]:
+            
+            if (backup[0][0] not in list(top[p].item_id)):
+                print(f'incomplete order configuration: {backup[0][0]}')
+                tmp = pd.DataFrame([backup[0].append((str(configs), 0))], columns = ['item_id', 'orders', 'order_configs'])
+                top[p] = top[p].append(tmp, ignore_index = True)
+            backup.pop(0)
+
+            if len(backup) == 0:
+                break
+
+
+        # Calculate the percent of total orders served from the pickface
+        sum = top[p].orders.sum()
+        top[p]['percent'] = top[p].apply(lambda row: row.orders / sum, axis = 1)
+
+        top[p] = top[p].sort_values('orders', ascending = False).set_index('item_id')
+        print(f'\nTop {len(top[p])} Items:\n{top[p]}')
+        top[p] = top[p].join(item_info, how = "left")
+        #print(top[p])
+        visited = list(order_count[order_count.visited == True].index)
+        #print(visited)
+        
+        ord_serv = order_count[order_count.visited == True].order_count.sum()
+        print('\nTotal Orders: {0:,}'.format(ord_sum))
+        print('Ideal Conditions:')
+        ord_per = ord_serv / ord_sum
+        print('\t% Orders Served: {0:.2%}'.format(ord_per))
+
+        sub_hashkey = hashkey[hashkey.order_config.isin(visited)]
+        sub_val_count = sub_hashkey['date'].value_counts()
+
+        min = int(round(sub_val_count.min()))
+        q1 = int(round(np.nanpercentile(sub_val_count, 25)))
+        med = int(round(sub_val_count.median()))
+        q3 = int(round(np.nanpercentile(sub_val_count, 75)))
+        max = int(round(sub_val_count.max()))
+
+        print('\tOrders/Day:')
+        print(f'\tMin = {min:,}')
+        print(f'\t1Qt = {q1:,}')
+        print(f'\tMed = {med:,}')
+        print(f'\t3Qt = {q3:,}')
+        print(f'\tMax = {max:,}')
+
+        min_max = min_max_from_hashkey(sub_hashkey, item_info)
+        #print(min_max)
+
+        top[p] = top[p].join(min_max, how = "left")
+
+        # Remove all the used order configurations
+        order_count = order_count[order_count.visited != True]
+
+        pickf = switch_pf(pf[p], cust, 1, row_height)
+        print(top[p])
+        pickf.populate(top[p])
+        pickf.display()
+        pickf.evaluate(hashkey)
+        pickf.to_csv()
+        pickfaces.append(pickf)
+
+    return pickfaces
+
 
 
 def build_by_velocity(hashkey: pd.DataFrame, num: int):
