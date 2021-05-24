@@ -168,8 +168,8 @@ class Pickface():
 
             for r in reader:
 
-                id = str(r[0])
-                desc = str(r[1])
+                id = str(r[0]).strip()
+                desc = str(r[1]).strip()
                 bay = int(r[3]) - 1
                 row = ROWS.index(r[4])
                 col = int(r[5]) - 1
@@ -314,6 +314,7 @@ class Pickface():
         print('% Orders Served: {0:.2%}'.format(ord_per))
 
         visited = list(order_count[order_count.visited == True].index)
+        sub_hashkey = hashkey[hashkey.order_config.isin(visited)]
         sub_val_count = sub_hashkey['date'].value_counts()
 
         min = int(round(sub_val_count.min()))
