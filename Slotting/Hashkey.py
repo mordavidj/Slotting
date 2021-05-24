@@ -88,6 +88,7 @@ def generate_hashkey(df):
     return df
 
 
+
 def generate_hashkey_ASC(filepath, cust):
     '''Take a file from ASC and generate hashkeys and order configs
 
@@ -122,23 +123,21 @@ def generate_hashkey_ASC(filepath, cust):
 
     crsr = cnxn.cursor()
 
-    item_sql = '''SELECT i.item_id, i.status
+    item_sql = '''SELECT i.ASC_id 
                   FROM Item AS i
-                  INNER JOIN Customer AS c ON i.customer = c.customer_id
-                  WHERE c.customer = ucase('{0:s}');'''.format(cust)
+                  WHERE i.customer = ucase('{0:s}');'''.format(cust)
 
-    items = pd.read_sql(item_sql, cnxn).set_index('item_id')
+    items = pd.read_sql(item_sql, cnxn).set_index('ASC_id')
     item_id = list(items.index.values)
     
 
-    kit_sql = '''SELECT k.kit_id, k.status
+    kit_sql = '''SELECT k.ASC_id
                  FROM Kit AS k
-                 INNER JOIN Customer AS c ON k.customer = c.customer_id
-                 WHERE c.customer = ucase('{0:s}');'''.format(cust)
+                 WHERE k.customer = ucase('{0:s}');'''.format(cust)
 
-    kits = pd.read_sql(kit_sql, cnxn).set_index('kit_id')
+    #kits = pd.read_sql(kit_sql, cnxn).set_index('kit_id')
 
-    kit_id = list(kits.index.values)
+    #kit_id = list(kits.index.values)
     
     print('Done\nBuilding hashkey from items and kits . . . ', end = '')
 
@@ -166,19 +165,23 @@ def generate_hashkey_ASC(filepath, cust):
 
         except:
             if row['ORDERNUMBER'] in item_id:
-                if items.loc[row['ORDERNUMBER'], 'status'] != 'O':
-                    if row['ORDERNUMBER'] in dict.keys():
-                        dict[row['ORDERNUMBER']] += row['SHIPDATE']
 
-                    else:
-                        dict[row['ORDERNUMBER']] = row['SHIPDATE']
+                if row['ORDERNUMBER'] in dict.keys():
+                    dict[row['ORDERNUMBER']] += row['SHIPDATE']
 
-            elif row['ORDERNUMBER'] in kit_id:
-                continue
+                else:
+                    dict[row['ORDERNUMBER']] = row['SHIPDATE']
+
+            #elif row['ORDERNUMBER'] in kit_id:
+            #    continue
 
 
-    n_row.append(str)
-    #print(tmp)
+    for i in sorted(dict.keys()):
+        hash.append(str(i + '*' + dict[i]))
+        config.append(i)
+
+    n_row.append(';'.join(hash))
+    n_row.append(';'.join(config))
     n_frame.append(n_row.copy())
 
     # first item is a blank line, so pop it
@@ -238,6 +241,7 @@ def generate_hashkey_from_SQL(filepath):
     return hashkey
 
 
+
 def min_max_from_hashkey(hashkey, case_info):
     '''Calculate a min-max from a hashkey using 80th and 90th 
     percentiles of items shipped each day as min and max
@@ -277,6 +281,7 @@ def min_max_from_hashkey(hashkey, case_info):
     case_info = case_info[['case_qty']]
     min_max = min_max.set_index('item_id').join(case_info, how='left')
 
+    print(min_max)
     min_max['min'] = min_max.apply(lambda row: to_int(np.ceil(row['80'] / row['case_qty'])), axis = 1)
     min_max['max'] = min_max.apply(lambda row: to_int(np.ceil(row['90'] / row['case_qty'])), axis = 1)
     
@@ -284,6 +289,7 @@ def min_max_from_hashkey(hashkey, case_info):
     #print(min_max)
 
     return min_max[['min', 'max']]
+
 
 
 def to_int(val):
