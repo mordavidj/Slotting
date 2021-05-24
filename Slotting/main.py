@@ -5,6 +5,9 @@ from Slotting import *
 from Pickface import *
 from Item import *
 from DB import *
+from Hashkey import *
+from GUI import *
+from test import tk_tutorial
 
 
 
@@ -87,18 +90,47 @@ def level_continuous():
 
 
 def nuskin():
-    hashkey = load_powerBI_hashkey('data/nuskin_hashkey.csv')
+    #hashkey = load_powerBI_hashkey('data/nuskin_hashkey.csv')
 
     #print(hashkey[['date', 'hashkey']].groupby('date').agg(['count']))
 
     ignored = ['01003882', '01003883', '01102892', '01003904', 
                '01310011', '01003440', '01003901', '01003529']
 
-    pf = slotting(hashkey, [27], 'NuSkin', ignore = ignored)
+    #pf = slotting(hashkey, [27], 'NuSkin', ignore = ignored)
 
-    pf1 = Pickface()
-    pf1.from_csv(r"..\..\..\Desktop\Nuskin-Memphis-27.csv")
-    evaluate_pf(hashkey, pf1)
+    #pf1 = Pickface()
+    #pf1.from_csv(r"..\..\..\Desktop\Nuskin-Memphis-27.csv")
+    #evaluate_pf(hashkey, pf1)
+
+    df = pd.read_csv('../../../Desktop/Nuskin_hashkey_lookup.csv',
+                     dtype = 'string')\
+                         .rename(columns = {'Created Date': 'datetime',
+                                            'Optimization Hash Key': 'hashkey'})
+    df['datetime'] = pd.to_datetime(df['datetime'])
+    df['date'] = df['datetime'].dt.date
+    df['day'] = df['datetime'].dt.day
+    print(len(df))
+    
+    df = df[df['day'] >= 9]
+    df['item_count'] = 0
+    tot = len(df)
+    print(tot)
+
+    for index, row in df.iterrows():
+        hashkey = row['hashkey'].split(';')[:-1]
+        i_count: int = 0
+        for hash in hashkey:
+            i_count += int(hash.split('*')[-1])
+        df.at[index, 'item_count'] = i_count
+
+    over = df[df.item_count > 12]
+
+    print(len(over))
+    print(len(over) / tot)
+    max = int(round(over.item_count.max()))
+    print(f'Max = {max:,}')
+
 
  
 def epicure():
@@ -129,6 +161,10 @@ def truvision():
 
     hashkey = load_hashkey('data/truvision_hashkey.csv')
 
+    top_vel = build_by_velocity(hashkey, pfs[0])
+
+    #Difference of ~300 orders (0.3%) more when built by velocity and not order configuration
+
     required = ['PROP65']
 
     pf = slotting(hashkey, pfs, 'TruVision', [13, 15, 15], require = required)
@@ -158,12 +194,41 @@ def amare():
 
 
 def bodyguardz():
-    kits_from_ASC_to_SQL(r"..\..\..\Desktop\bodyguardz_kit_BOM.csv")
+    #kits_from_ASC_to_SQL(r"..\..\..\Desktop\bodyguardz_kit_BOM.csv")
+    hashkey = generate_hashkey_ASC(r"..\..\..\Desktop\bodyguardz_batch_report.csv", 
+                                   'BODYGUARDZ')
+    hashkey.to_csv('data/bodyguardz_hashkey.csv')
+    print(hashkey)
+
+    #hashkey = load_hashkey('data/bodyguardz_hashkey.csv')
+    single_single(hashkey, ignore = ['FORM-ADVREP'])
+
 
 
 
 def mfgdot():
-    kits_from_ASC_to_SQL(r"..\..\..\Desktop\mfgdot_kit_BOM.csv")
+    #kits_from_ASC_to_SQL(r"..\..\..\Desktop\mfgdot_kit_BOM.csv")
+    hashkey = generate_hashkey_ASC(r"..\..\..\Desktop\doterra_orders_and_quantities.csv", 
+                                   'MFGDOT')
+    print(hashkey)
+    hashkey.to_csv('data/mfgdot_hashkey.csv')
+
+    hashkey = load_hashkey('data/mfgdot_hashkey.csv')
+    top_vel = build_by_velocity(hashkey, 48)
+
+
+
+def young_living():
+    hashkey = load_powerBI_hashkey(r"..\..\..\Desktop\younglivingorders.csv")
+    print(hashkey.date.max())
+    print(hashkey.date.min())
+    new_pf = Pickface()
+    new_pf.from_csv(r"data\YoungLiving-28.csv")
+    new_pf.display()
+    new_pf.evaluate(hashkey)
+
+    pf = slotting(hashkey, [27], 'YOUNGLIVING', [15,15,15])
+    
 
 
 
@@ -221,7 +286,7 @@ def kits_from_ASC(filepath, cust):
 
 
 def kits_from_ASC_to_SQL(filepath):
-    print(f'Getting kits from ASC for SQL... ', end = '')
+    print(f'Getting kits from ASC for SQL . . . ', end = '')
 
     df = pd.read_csv(filepath,
                       dtype = "string")
@@ -230,45 +295,43 @@ def kits_from_ASC_to_SQL(filepath):
     kits = []   # Stores all items in the desired format
     kiq = []    # Keeps each order together in one row
     kit = ''    # Store the kit id while adding items
-    cust = df.iat[0, 0].upper()
+    cust = ''   # Store the customer id while adding items
 
-    # Get the customer ID from the DB
+    # Connect to DB to get item info
     cnxn = connect_db()
     if type(cnxn) is int:
         return
 
-    crsr = cnxn.cursor()
+    cust_sql = '''SELECT customer_id
+                  FROM Customer;'''
 
-    cust_sql = '''SELECT c.customer_id
-                  FROM Customer AS c
-                  WHERE c.customer = '{0:s}';'''.format(cust)
+    cust_df = pd.read_sql(cust_sql, cnxn)
 
-    crsr.execute(cust_sql)
-   
-    for row in crsr.fetchall():
-        cust_id = row.customer_id
+    custs = list(cust_df['customer_id'])
+    
 
     for index, row in df.iterrows():
 
         if pd.notna(row['VMI_CUSTID']):
             # If the it item can be converted into a date, it's a new item
-            if row['VMI_CUSTID'] == cust:
+            if row['VMI_CUSTID'].upper() in custs:
+                cust = row['VMI_CUSTID']
                 kit = row['ITEMID']
-                kits.append([cust_id, kit, row['DESCRIPTION']])
+                kits.append([cust, kit, row['DESCRIPTION']])
 
             else:
-                kiq.append([kit, row['VMI_CUSTID'], row["ITEMID"]])
+                kiq.append([cust, kit, row['VMI_CUSTID'], row["ITEMID"]])
 
 
     # save the items into dataframes
-    df_kits = pd.DataFrame(kits, columns = ['customer', 'kit_id', 'description'])
-    df_kiq = pd.DataFrame(kiq, columns = ['kit', 'item', 'qty'])
+    df_kits = pd.DataFrame(kits, columns = ['customer', 'asc_id', 'description'])
+    df_kiq = pd.DataFrame(kiq, columns = ['customer', 'kit', 'item', 'qty'])
 
     df_kits = df_kits.set_index('customer')
-    df_kiq = df_kiq.set_index('kit')
+    df_kiq = df_kiq.set_index('customer')
 
-    df_kits.to_csv(f'data/{cust}_Kit_SQL.csv')
-    df_kiq.to_csv(f'data/{cust}_Kits_Items_SQL.csv')
+    df_kits.to_csv(f'data/ASC_Kit_SQL.csv')
+    df_kiq.to_csv(f'data/ASC_Kits_Items_SQL.csv')
 
     print('Done')
 
@@ -286,60 +349,15 @@ def main():
     #amare()
     #bodyguardz()
     #lifevan()
-    mfgdot()
+    #mfgdot()
+    young_living()
 
-
-
-import tkinter as tk
-
-def gui():
-
-    top = tk.Tk()\
-        .title("Automated Slotting Tool")\
-        .columnconfigure(0, weight = 1)\
-        .rowconfigure(0, weight = 1)
-
-    def gen_hashkey_gui():
-        win = tk.Toplevel(top)
-        lab = tk.Label(master = win,
-                       text="Generate Hashkey")\
-                           .pack(pady = 15)
-        win.mainloop()
-
-    fr_main = tk.Frame(top, width = 500, height = 400)
-    fr_main.grid(row = 0, 
-                 column = 0, 
-                 sticky = (tk.N, tk.W, tk.E, tk.S))
-
-    fr_buttons = tk.Frame(master = fr_main,
-                          relief = tk.RIDGE,
-                          borderwidth = 1)\
-                              .columnconfigure(0, minsize = 200)\
-                              .rowconfigure([0, 1], minsize = 50)\
-                              .place(x = 10, y = 50)
-
-    fr_text = tk.Frame(fr_main,
-                       relief = tk.RIDGE,
-                       borderwidth = 3,
-                       bg = "white")\
-                           .place(x = 300, y = 50)
-
-    lab = tk.Label(master = fr_text,
-                   text="Automated Slotting Tool")\
-                       .pack()
-
-    but_GenHash = tk.Button(master = fr_buttons,
-                            text = "Generate Hashkey",
-                            command = gen_hashkey_gui)
-    but_Slott = tk.Button(master = fr_buttons,
-                          text = "Calculate Slotting")
-    but_GenHash.grid(row = 0, column = 0)
-    but_Slott.grid(row = 1, column = 0)
-
-    top.mainloop()
+    #kits_from_ASC_to_SQL(r"..\..\..\Desktop\customer_kit_BOM.csv")
+    pass
 
 
 
 main()
 #gui()
+#tk_tutorial()
 

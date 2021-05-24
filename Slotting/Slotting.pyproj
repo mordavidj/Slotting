@@ -32,6 +32,12 @@
     <Compile Include="DB.py">
       <SubType>Code</SubType>
     </Compile>
+    <Compile Include="GUI.py">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Hashkey.py">
+      <SubType>Code</SubType>
+    </Compile>
     <Compile Include="Pickface.py" />
     <Compile Include="Slotting.py" />
     <Compile Include="test.py" />
