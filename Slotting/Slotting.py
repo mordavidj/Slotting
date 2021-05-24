@@ -1,9 +1,11 @@
 import pandas as pd
 pd.set_option('max_columns', None)
+pd.set_option('max_row', None)
 import numpy as np
 import datetime
 from Pickface import *
 from DB import connect_db
+from Hashkey import *
 
 
 
@@ -84,7 +86,7 @@ def overlaying_slotting(hashkey, pf, cust, row_height, **kwargs):
     backup = []     # Incomplete order configurations to use for later
 
     if ignored:
-        print('Removing orders with ignored items... ', end = '')
+        print('Removing orders with ignored items . . . ', end = '')
         for ind, row in order_count.iterrows():
             # If any items in the order_count index match, delete the configuration
             if any(x in ignored for x in ind.split(';')):
@@ -251,7 +253,7 @@ def slotting(hashkey, pf, cust, row_height, **kwargs):
         .rename(columns={'order_config': 'order_count'})
 
     order_count['visited'] = False
-    print(order_count)
+    #print(order_count)
 
     # Connect to DB to get item info
     item_sql = '''SELECT i.item_id, i.description, i.case_qty, i.width, i.length, i.height
@@ -267,7 +269,7 @@ def slotting(hashkey, pf, cust, row_height, **kwargs):
     backup = []     # Incomplete order configurations to use for later
 
     if ignored:
-        print('Removing orders with ignored items... ', end = '')
+        print('Removing orders with ignored items . . . ', end = '')
         for ind, row in order_count.iterrows():
             # If any items in the order_count index match, delete the configuration
             if any(x in ignored for x in ind.split(';')):
@@ -489,36 +491,52 @@ def single_single(hashkey, **kwargs):
     # Get ignored or required items
     ignored = kwargs.get('ignore')
 
-    print(hashkey)
+    #print(hashkey)
     hashkey_count = hashkey.hashkey.value_counts().to_frame()
     hashkey_count['visited'] = False
-    print(hashkey_count)
+    #print(hashkey_count)
 
     ord_sum = hashkey_count.hashkey.sum()
     sing_sum = 0
 
     if ignored:
+        hashkey_count['single'] = False
+
         for index, row in hashkey_count.iterrows():
             hash = index.split(';')
             length = len(hash)
+            single = True
+
             for h in hash:
                 i = h.split('*')
+
                 if i[0] in ignored:
                     length -= 1
+                    single = False
+
                 elif i[-1] != '1':
                     length = -1
                     break
 
             if length == 1:
                 hashkey_count.at[index, 'visited'] = True
+                hashkey_count.at[index, 'single'] = single
 
     else:
         for index, row in hashkey_count.iterrows():
             if len(index.split(';')) == 1:
                 if index.split('*')[-1] == '1':
                     hashkey_count.at[index, 'visited'] = True
-
-    visited = list(hashkey_count[hashkey_count.visited == True].index)
+    
+    singles = hashkey_count[hashkey_count.visited]
+    print(singles)
+    print('\nTotal Singles: {0:,} ({1:.2%})'.format(singles.hashkey.sum(), 
+                                                  singles.hashkey.sum()/hashkey_count.hashkey.sum()))
+    sing_pls = singles[~singles.single].hashkey.sum()
+    print('\tSingle + 1: {0:,} ({1:.2%})'.format(sing_pls, sing_pls/singles.hashkey.sum()))
+    sing_sing = singles[singles.single].hashkey.sum()
+    print('\tSingle-Single: {0:,} ({1:.2%})'.format(sing_sing, sing_sing/singles.hashkey.sum()))
+    visited = list(singles.index)
 
     sub_hashkey = hashkey[hashkey.hashkey.isin(visited)]
     sub_val_count = sub_hashkey['date'].value_counts()
