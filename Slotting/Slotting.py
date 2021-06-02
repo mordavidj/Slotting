@@ -1,11 +1,13 @@
 import pandas as pd
 pd.set_option('max_columns', None)
-pd.set_option('max_row', None)
+#pd.set_option('max_row', None)
 import numpy as np
 import datetime
 from Pickface import *
 from DB import connect_db
 from Hashkey import *
+import pyodbc
+#import copy
 
 
 
@@ -171,7 +173,7 @@ def overlaying_slotting(hashkey, pf, cust, row_height, **kwargs):
         #print(top[p])
         visited = list(order_count[order_count.visited == True].index)
         #print(visited)
-        
+
         ord_serv = order_count[order_count.visited == True].order_count.sum()
         print('\nTotal Orders: {0:,}'.format(ord_sum))
         print('Ideal Conditions:')
@@ -214,20 +216,18 @@ def overlaying_slotting(hashkey, pf, cust, row_height, **kwargs):
 
 
 
-def slotting(hashkey, pf, cust, row_height, **kwargs):
+def slotting(hashkey, pf, cust, heights, prior, **kwargs):
     '''Builds the desired pickfaces based on the most popular order configurations.
 
     '''
     # convert the type to an iterable list
     if type(pf) is not list:
-        pf = [pf]
+        raise TypeError(f'Pickface info was not valid.')
 
     # Convert each item in pickface list to integer
     for i in range(len(pf)):
-        try:
-            pf[i] = int(pf[i])
-        except:
-            raise TypeError(f'Pickface number {i + 1} was not valid.')
+        if pf[i][1] != len(heights[i]):
+            raise "Pickface row number and given heights don't match."
 
     # Connect to DB
     cnxn = connect_db()
@@ -253,14 +253,19 @@ def slotting(hashkey, pf, cust, row_height, **kwargs):
         .rename(columns={'order_config': 'order_count'})
 
     order_count['visited'] = False
-    #print(order_count)
+    print(order_count)
+    print(len(order_count[order_count.order_count == 1]))
 
     # Connect to DB to get item info
-    item_sql = '''SELECT i.item_id, i.description, i.case_qty, i.width, i.length, i.height
+    item_sql = '''SELECT i.ASC_id AS item_id, i.description, i.case_qty, i.width, i.length, i.height
                   FROM Item AS i
                   WHERE i.customer = ucase('{0:s}');'''.format(cust)
 
     item_info = pd.read_sql(item_sql, cnxn).set_index('item_id')
+
+    #print(item_info)
+
+    cnxn.close()
 
     top = []        # Store top X items for each pickface
     pickfaces = []  # Store each pickface
@@ -279,6 +284,7 @@ def slotting(hashkey, pf, cust, row_height, **kwargs):
 
     # loop through each pickface number and get those top X items
     for p in range(len(pf)):
+        slots = pf[p][2] * pf[p][1] * pf[p][0]
         configs = 0 # Number for tracking order configurations
         # each pickface is stored in its own dataframe
         top.append(pd.DataFrame(columns = ['item_id', 'orders', 'order_configs']))
@@ -297,13 +303,13 @@ def slotting(hashkey, pf, cust, row_height, **kwargs):
             # if there aren't enough spaces to hold the next order configuration...
             # count the number of items missing and if they can fit in, add the config
             # and items
-            if len(items) > (pf[p] - len(top[p])):
+            if len(items) > (slots - len(top[p])):
                 not_in = 0
                 for i in items:
                     if i not in list(top[p]['item_id']):
                         not_in += 1
 
-                if not_in > (pf[p] - len(top[p])):
+                if not_in > (slots - len(top[p])):
                     for i in items:
                         backup.append([i, row['order_count']])
 
@@ -332,7 +338,7 @@ def slotting(hashkey, pf, cust, row_height, **kwargs):
             configs += 1
 
         print('')
-        while len(top[p].index) < pf[p]:
+        while len(top[p].index) < slots:
             
             if (backup[0][0] not in list(top[p].item_id)):
                 print(f'incomplete order configuration: {backup[0][0]}')
@@ -385,13 +391,15 @@ def slotting(hashkey, pf, cust, row_height, **kwargs):
         # Remove all the used order configurations
         order_count = order_count[order_count.visited != True]
 
-        pickf = switch_pf(pf[p], cust, 1, row_height)
+        pickf = Pickface(pf[p][0], pf[p][1], pf[p][2], heights[p], 1, cust = cust, row_priority = prior[p])
+        #pickfaces.append(Pickface(pf[p][0], pf[p][1], pf[p][2], heights[p], 1, cust = cust, row_priority = prior[p]))
+        #pickf = switch_pf(pf[p], cust, 1, row_height)
         print(top[p])
         pickf.populate(top[p])
         pickf.display()
         pickf.evaluate(hashkey)
         pickf.to_csv()
-        pickfaces.append(pickf)
+        pickfaces.append(copy.deepcopy(pickf))
 
     return pickfaces
 
@@ -484,79 +492,81 @@ def build_by_velocity(hashkey: pd.DataFrame, num: int):
 
 
 
-def single_single(hashkey, **kwargs):
+def single_single(filepath, **kwargs):
     '''Find statistics on the single-single orders in a hashkey.
 
     '''
-    # Get ignored or required items
-    ignored = kwargs.get('ignore')
+    print(f'\nUploading batch orders to DB: {filepath} . . . ')
 
-    #print(hashkey)
-    hashkey_count = hashkey.hashkey.value_counts().to_frame()
-    hashkey_count['visited'] = False
-    #print(hashkey_count)
+    df = None
 
-    ord_sum = hashkey_count.hashkey.sum()
-    sing_sum = 0
+    # Get the file type and read it in appropriately
+    f_type = filepath.split('.')[-1]
+    if f_type == 'csv':
+        df = pd.read_csv(filepath,
+                         dtype = 'string')
 
-    if ignored:
-        hashkey_count['single'] = False
+    elif f_type == 'xlsx':
+        df = pd.read_excel(filepath,
+                           dtype = 'string')
 
-        for index, row in hashkey_count.iterrows():
-            hash = index.split(';')
-            length = len(hash)
-            single = True
+    print(df)
 
-            for h in hash:
-                i = h.split('*')
+    order = ''
 
-                if i[0] in ignored:
-                    length -= 1
-                    single = False
+    print('Loading item info . . . ', end = '')
 
-                elif i[-1] != '1':
-                    length = -1
-                    break
+    cnxn = connect_db('single-single')
+    if type(cnxn) is int:
+        return
 
-            if length == 1:
-                hashkey_count.at[index, 'visited'] = True
-                hashkey_count.at[index, 'single'] = single
+    crsr = cnxn.cursor()
 
-    else:
-        for index, row in hashkey_count.iterrows():
-            if len(index.split(';')) == 1:
-                if index.split('*')[-1] == '1':
-                    hashkey_count.at[index, 'visited'] = True
+    item_sql = '''SELECT ITEMID
+                  FROM Item;'''
+
+    crsr.execute(item_sql)
+
+    item_id = []
+    for row in crsr.fetchall():
+        item_id.append(row[0])
     
-    singles = hashkey_count[hashkey_count.visited]
-    print(singles)
-    print('\nTotal Singles: {0:,} ({1:.2%})'.format(singles.hashkey.sum(), 
-                                                  singles.hashkey.sum()/hashkey_count.hashkey.sum()))
-    sing_pls = singles[~singles.single].hashkey.sum()
-    print('\tSingle + 1: {0:,} ({1:.2%})'.format(sing_pls, sing_pls/singles.hashkey.sum()))
-    sing_sing = singles[singles.single].hashkey.sum()
-    print('\tSingle-Single: {0:,} ({1:.2%})'.format(sing_sing, sing_sing/singles.hashkey.sum()))
-    visited = list(singles.index)
+    bo = []
+    oi = []
 
-    sub_hashkey = hashkey[hashkey.hashkey.isin(visited)]
-    sub_val_count = sub_hashkey['date'].value_counts()
+    #crsr.execute('''INSERT INTO Batch_Order (order_num, batch_num) VALUES('1', 1);''')
+    #cnxn.commit()
+    print('Done\nUploading orders to single-single DB  . . . ', end = '')
 
-    sing_sum = len(sub_hashkey)
-    sing_per = sing_sum / ord_sum
-    print('\nTotal Orders: {0:,}'.format(ord_sum))
-    print('Single-Single Orders: {0:,} ({1:.2%})'.format(sing_sum, sing_per))
+    for index, row in df.iterrows():
+        # If the it item can be converted into a date, it's a new item
+        try:
+            date_time = datetime.datetime.strptime(row['OURORDERDATE'], 
+                                                   "%m/%d/%Y %I:%M:%S %p")
+            order = row['ORDERNUMBER']
+            bo.append((row['OURORDERDATE'], order, row['BATCH_NUM']))
 
-    min = int(round(sub_val_count.min()))
-    q1 = int(round(np.nanpercentile(sub_val_count, 25)))
-    med = int(round(sub_val_count.median()))
-    q3 = int(round(np.nanpercentile(sub_val_count, 75)))
-    max = int(round(sub_val_count.max()))
+        except:
+            if row['ORDERNUMBER'] in item_id:
+                oi.append((order, row['ORDERNUMBER']))
+ 
+    
+    try:
+        crsr.executemany("INSERT INTO Batch_Order (order_date, order_num, batch_num) VALUES(?, ?, ?)",
+                         bo)
+        cnxn.commit()
+    except pyodbc.Error as err:
+        print(err)
 
-    print('Orders/Day:')
-    print(f'\tMin = {min:,}')
-    print(f'\t1Qt = {q1:,}')
-    print(f'\tMed = {med:,}')
-    print(f'\t3Qt = {q3:,}')
-    print(f'\tMax = {max:,}')
+    try:
+        crsr.executemany("INSERT INTO Order_Item (order_num, item_id) VALUES(?, ?)",
+                         oi)
+        cnxn.commit()
+    except pyodbc.Error as err:
+        print(err)
+    
+    
+
+    print('Done')
 
     return

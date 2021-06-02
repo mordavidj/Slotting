@@ -1,11 +1,13 @@
 import pyodbc
 
-def connect_db():
+def connect_db(DB: str = 'Items'):
     '''Connect to a Microsoft Access database localy stored.
 
     '''
+    string = r'DBQ=..\..\..\db\{0:s}.accdb;'.format(DB)
+    #print(string)
     try:
-        connection = pyodbc.connect(r'Driver={Microsoft Access Driver (*.mdb, *.accdb)};DBQ=..\..\..\db\Items.accdb;')
+        connection = pyodbc.connect(r'Driver={Microsoft Access Driver (*.mdb, *.accdb)};' + string)
         connection.autocommit = False
         return connection
 
