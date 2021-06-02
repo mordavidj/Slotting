@@ -6,6 +6,7 @@ import csv
 import datetime as dt
 import os
 import numpy as np
+import copy
 
 ROWS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']
 
@@ -26,19 +27,35 @@ class Pickface():
     col_priority: list
 
 
-    def __init__(self, bays: int = 0, bay_cols: int = 0, bay_rows: int = 0, 
+    def __init__(self, bays: int = 0, bay_rows: int = 0, bay_cols: int = 0, 
                  row_height: list = [], depth: int = 0, slots: list = [], 
-                 cust: str = '', row_priority: list = [], 
-                 col_priority: list = []):
+                 cust: str = '', row_priority: list = []):
         self.bays = bays
         self.bay_cols = bay_cols
         self.bay_rows = bay_rows
         self.row_height = row_height
         self.depth = depth
-        self.slots = slots
+        self.slots = copy.deepcopy(slots)
         self.cust = cust
         self.row_priority = row_priority
-        self.col_priority = col_priority
+        self.col_priority = []
+
+        dec = int(math.ceil(bay_cols / 2)) - 1
+        inc = dec + 1
+        dir = -1
+
+        while len(self.col_priority) < bay_cols:
+            if dir > 0:
+                self.col_priority.append(inc)
+                inc += 1
+
+            else:
+                self.col_priority.append(dec)
+                dec -= 1
+
+            dir *= -1
+        print(self.col_priority)
+        self.load()
 
 
 
@@ -203,7 +220,7 @@ class Pickface():
 
         '''
         splits = split(items, self.bays)
-
+        #print(hex(id(self.slots)))
         for b in range(self.bays):
             r = 0
             c = 0
@@ -222,20 +239,21 @@ class Pickface():
                             max = item_info['max'])
 
                 for row in self.row_priority:
-                    if item.height is None or\
-                        self.row_height[row] >= item.height \
-                        or math.isnan(item.height):
+                    if item.height is None or self.row_height[row] >= item.height or math.isnan(item.height):
 
                         for col in self.col_priority:
                             if self.slots[b][row][col] is None:
                                 self.slots[b][row][col] = item
+                                #self.display()
                                 slotted = True
                                 break
                     if slotted:
                         break
+                    
 
                 if not slotted:
-                    print(f'Item {item.id} could not be slotted.')
+                    print(f'Item {item.id} could not be slotted: {item.height}, {self.row_height}')
+                    #self.display()
 
            
 
