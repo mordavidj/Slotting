@@ -149,7 +149,9 @@ def epicure():
 
 
 def truvision():
-    pfs = [9]
+    pfs = [[1, 4, 5], [4, 3, 4]]
+    height = [[15, 15, 15, 99], [15, 14, 16]]
+    prio = [[2, 1, 0, 3], [1, 0, 2]]
         
     #hashkey = generate_hashkey_ASC(r"..\..\..\Desktop\truvision_asc_orders_and_quantities.csv", 'truvision')
 
@@ -161,25 +163,28 @@ def truvision():
 
     hashkey = load_hashkey('data/truvision_hashkey.csv')
 
-    top_vel = build_by_velocity(hashkey, pfs[0])
+    #top_vel = build_by_velocity(hashkey, pfs[0])
 
     #Difference of ~300 orders (0.3%) more when built by velocity and not order configuration
 
     required = ['PROP65']
 
-    pf = slotting(hashkey, pfs, 'TruVision', [13, 15, 15], require = required)
-    #pf[0].to_csv(r"..\..\..\Desktop")
-    new_pf = Pickface()
-    new_pf.from_csv(r"..\..\..\Desktop\Truvision_PFs-11.csv")
-    new_pf.display()
-    new_pf.evaluate(hashkey)
-
+    #pf = slotting(hashkey, pfs, 'TRUVISION', height, prio, require = required)
+    
+    #print(hashkey['date'].value_counts().sort_index())
     #pf2 = continuous_slotting(hashkey, [48, 32], 'TruVision_continuous')
 
 
 
 def lifevan():
-    kits_from_ASC_to_SQL(r"..\..\..\Desktop\lifevan_kit_BOM.csv")
+    #kits_from_ASC_to_SQL(r"..\..\..\Desktop\lifevan_kit_BOM.csv")
+    #hashkey = generate_hashkey_ASC('../../../Desktop/lifevan_asc.csv', 'LIFEVAN')
+    #hashkey = hashkey.set_index('order_number')
+    #hashkey.to_csv('data/lifevan_hashkey.csv')
+    hashkey = load_hashkey('data/lifevan_hashkey.csv')
+    print(hashkey)
+    nums = [27, 48]
+    pf = slotting(hashkey, nums, 'LIFEVAN', [20, 20, 20])
 
 
 
@@ -195,13 +200,13 @@ def amare():
 
 def bodyguardz():
     #kits_from_ASC_to_SQL(r"..\..\..\Desktop\bodyguardz_kit_BOM.csv")
-    hashkey = generate_hashkey_ASC(r"..\..\..\Desktop\bodyguardz_batch_report.csv", 
-                                   'BODYGUARDZ')
-    hashkey.to_csv('data/bodyguardz_hashkey.csv')
-    print(hashkey)
+    #hashkey = generate_hashkey_ASC(r"..\..\..\Desktop\batch_1834971.csv", 
+    #                               'BODYGUARDZ')
+    #hashkey.to_csv('data/bodyguardz_hashkey.csv')
+    #print(hashkey)
 
     #hashkey = load_hashkey('data/bodyguardz_hashkey.csv')
-    single_single(hashkey, ignore = ['FORM-ADVREP'])
+    single_single(r"..\..\..\Desktop\batch_1834975.csv")
 
 
 
@@ -212,7 +217,7 @@ def mfgdot():
                                    'MFGDOT')
     print(hashkey)
     hashkey.to_csv('data/mfgdot_hashkey.csv')
-
+    
     hashkey = load_hashkey('data/mfgdot_hashkey.csv')
     top_vel = build_by_velocity(hashkey, 48)
 
@@ -344,13 +349,13 @@ def main():
     #min_max_from_hashkey('do')
     #nuskin()
     #epicure()
-    #truvision()   
+    truvision()   
     #manscaped() 
     #amare()
     #bodyguardz()
     #lifevan()
     #mfgdot()
-    young_living()
+    #young_living()
 
     #kits_from_ASC_to_SQL(r"..\..\..\Desktop\customer_kit_BOM.csv")
     pass
