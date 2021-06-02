@@ -130,7 +130,7 @@ def generate_hashkey_ASC(filepath, cust):
     items = pd.read_sql(item_sql, cnxn).set_index('ASC_id')
     item_id = list(items.index.values)
     
-
+    
     kit_sql = '''SELECT k.ASC_id
                  FROM Kit AS k
                  WHERE k.customer = ucase('{0:s}');'''.format(cust)
@@ -139,6 +139,9 @@ def generate_hashkey_ASC(filepath, cust):
 
     #kit_id = list(kits.index.values)
     
+    crsr.close()
+    cnxn.close()
+
     print('Done\nBuilding hashkey from items and kits . . . ', end = '')
 
     for index, row in df.iterrows():
@@ -282,8 +285,8 @@ def min_max_from_hashkey(hashkey, case_info):
     min_max = min_max.set_index('item_id').join(case_info, how='left')
 
     print(min_max)
-    min_max['min'] = min_max.apply(lambda row: to_int(np.ceil(row['80'] / row['case_qty'])), axis = 1)
-    min_max['max'] = min_max.apply(lambda row: to_int(np.ceil(row['90'] / row['case_qty'])), axis = 1)
+    min_max['min'] = min_max.apply(lambda row: to_int(np.ceil(row['80'] / row['case_qty'])) if row['case_qty'] is not None else 0, axis = 1)
+    min_max['max'] = min_max.apply(lambda row: to_int(np.ceil(row['90'] / row['case_qty'])) if row['case_qty'] is not None else 0, axis = 1)
     
     print('Done')
     #print(min_max)
