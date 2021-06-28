@@ -6,55 +6,86 @@ from Pickface import *
 from DB import connect_db
 
 
-def load_powerBI_hashkey(filepath):
-    '''Load a Power BI Hashkey report from a file and generate order configurations
+
+def remove_lol(hashkey: pd.DataFrame):
+    '''Filters out any orders in the hashkey that could be handled in LOL
 
     '''
-    print(f'\nLoading Power BI Hashkey: {filepath}')
+    print("\nRemoving LOL orders . . . ", end = "")
+    tot_ord = len(hashkey)
+    by_date = hashkey.groupby('date')['hashkey'].value_counts().to_frame()
+    
+    lol_items = []
 
-    df = pd.read_csv(filepath,
-                     dtype = 'string')\
-                         .rename(columns = {'Created Date': 'date',
-                                            'Optimization Hash Key': 'hashkey'})
-    df['date'] = pd.to_datetime(df['date']).dt.date
-    df['order_config'] = ''
+    for ind, row in by_date.iterrows():
+        if row['hashkey'] >= 50:
+            hash = ind[1]
+            sum = 0
+            tmp_items = []
+            for h in hash.split(";"):
+                item, quant = h.split('*')
+                sum += int(quant)
+                tmp_items.append(item)
 
-    # Order configurations are hashkeys without quantities
-    print('Generating Order Configurations... ', end = '')
-    for ind, row in df.iterrows():
-        hashes = row['hashkey'].split(';')
-        config = ''
-        prefix = ''
-        for hash in hashes:
-            if hash != '':
-                config += str(prefix + hash.split('*')[0])
-                prefix = ';'
+            if sum <= 10:
+                hashkey = hashkey.drop(hashkey[(hashkey['date'] == ind[0]) & (hashkey.hashkey == ind[1])].index)
+                for i in tmp_items:
+                    if i not in lol_items:
+                        lol_items.append(i) 
+                        
 
-        df.at[ind, 'order_config'] = config
-
+    #print(hashkey.groupby('date')['hashkey'].value_counts().to_frame())
     print('Done')
-    #print(df.head(20))
-    #print(df.dtypes)
-    return df
+    print('Total Orders: {0:,}'.format(tot_ord))
+    print('Orders Removed: {0:,} ({1:.2%})'.format(tot_ord - len(hashkey), (tot_ord - len(hashkey)) / tot_ord))
+    print(lol_items)
+    print('Remaining: {0:,} ({1:.2%})'.format(len(hashkey), len(hashkey) / tot_ord))
+
+    return hashkey
 
 
 
 def load_hashkey(filepath):
-    '''Load a hashkey that has already been generated.
+    '''Load a Power BI Hashkey report from a file and generate order configurations
 
     '''
-    print(f'\nLoading Hashkey: {filepath} . . . ', end = '')
+    print(f'\nLoading hashkey: {filepath.split("/")[-1]} . . . ', end = '')
 
-    df = pd.read_csv(filepath,
-                     dtype = 'string')
+    df = None
+
+    # Get the file type and read it in appropriately
+    f_type = filepath.split('.')[-1]
+    if f_type == 'csv':
+        df = pd.read_csv(filepath,
+                         dtype = 'string')
+
+    elif f_type == 'xlsx':
+        df = pd.read_excel(filepath,
+                           dtype = 'string')
+
+    else:
+        raise f"Unrecognized filetype: .{f_type}"
+
+    if 'Optimization Hash Key' in df.columns:
+        df = df.rename(columns = {'Created Date': 'date',
+                             'Optimization Hash Key': 'hashkey',
+                             'Client Order Number': 'order_number'})
+    df = df.set_index('order_number')
 
     df['date'] = pd.to_datetime(df['date']).dt.date
+    
+    recent = df['date'].max()
+    d = recent - dt.timedelta(days=42)
+    df = df[df['date'] >= d]
+    
 
     # Create order configuration if not already in dataframe
     if 'order_config' not in df.columns:
         df['order_config'] = ''
-        print('Generating Order Configurations... ', end = '')
+        df['hashkey'] = df['hashkey'].str.replace(r';$', '')
 
+        # Order configurations are hashkeys without quantities
+        print('\nGenerating Order Configurations . . . ', end = '')
         for ind, row in df.iterrows():
             hashes = row['hashkey'].split(';')
             config = ''
@@ -66,7 +97,16 @@ def load_hashkey(filepath):
 
             df.at[ind, 'order_config'] = config
 
+        if f_type == 'csv':
+            df.to_csv(filepath)
+
+        elif f_type == 'xlsx':
+            df.to_excel(filepath) 
+
+    
+
     print('Done')
+
     return df
 
 

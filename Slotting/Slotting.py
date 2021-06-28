@@ -401,6 +401,15 @@ def slotting(hashkey, pf, cust, heights, prior, **kwargs):
         pickf.to_csv()
         pickfaces.append(copy.deepcopy(pickf))
 
+    print(order_count)
+    print(order_count['order_count'].sum())
+    remaining = []
+    for ind, row in order_count.iterrows():
+        for i in ind.split(';'):
+            if i not in remaining:
+                remaining.append(i)
+
+    print(remaining)
     return pickfaces
 
 

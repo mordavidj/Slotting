@@ -4,7 +4,7 @@
     <SchemaVersion>2.0</SchemaVersion>
     <ProjectGuid>f9b4b5e5-8422-48ea-af3b-b1fad7cb8184</ProjectGuid>
     <ProjectHome>.</ProjectHome>
-    <StartupFile>main.py</StartupFile>
+    <StartupFile>Power_BI.py</StartupFile>
     <SearchPath>
     </SearchPath>
     <WorkingDirectory>.</WorkingDirectory>
@@ -40,7 +40,7 @@
     </Compile>
     <Compile Include="Pickface.py" />
     <Compile Include="Slotting.py" />
-    <Compile Include="test.py" />
+    <Compile Include="Power_BI.py" />
   </ItemGroup>
   <ItemGroup>
     <Interpreter Include="slotting_env\">

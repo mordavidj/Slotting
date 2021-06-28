@@ -7,7 +7,11 @@ from Item import *
 from DB import *
 from Hashkey import *
 from GUI import *
-from test import tk_tutorial
+
+
+POD = [1, 3, 3]
+HVPNP = [3, 3, 3]
+PNP = [4, 3, 4]
 
 
 
@@ -233,7 +237,46 @@ def young_living():
     new_pf.evaluate(hashkey)
 
     pf = slotting(hashkey, [27], 'YOUNGLIVING', [15,15,15])
+
+
+
+def pura():
+    pfs1 = [POD, HVPNP, PNP]
+    pfs2 = [HVPNP, PNP]
+    pfs3 = [PNP]
+    h1 = [[99,99,99], [99,99,99], [99,99,99]]
+    h2 = [[99,99,99], [99,99,99]]
+    h3 = [[99,99,99]]
+    prio1 = [[1, 0, 2], [1, 0, 2], [1, 0, 2]]
+    prio2 = [[1, 0, 2], [1, 0, 2]]
+    prio3 = [[1, 0, 2]]
+        
+    hashkey = generate_hashkey_ASC(r"..\..\..\Desktop\pura_orders_and_quantities.csv", 'pura')
+
+    hashkey = hashkey.set_index('order_number')
+
+    hashkey.to_csv('data/pura_hashkey.csv')
     
+    #hashkey = load_hashkey('data/pura_hashkey.csv')
+
+    pf1 = slotting(hashkey, pfs1, 'PURA', h1, prio1)
+    pf2 = slotting(hashkey, pfs2, 'PURA', h2, prio2)
+    pf3 = slotting(hashkey, pfs3, 'PURA', h3, prio3)
+
+    return
+    
+
+
+def monat():
+    pfs = [HVPNP, PNP]
+    h = [[99, 99, 99], [99, 99, 99]]
+    p = [[1, 0, 2], [1, 0, 2]]
+
+    hashkey = load_hashkey('data/Monat_OHK.xlsx')
+
+    hashkey = remove_lol(hashkey)
+
+    pf = slotting(hashkey, pfs, 'MONAT', h, p)
 
 
 
@@ -349,14 +392,15 @@ def main():
     #min_max_from_hashkey('do')
     #nuskin()
     #epicure()
-    truvision()   
+    #truvision()   
     #manscaped() 
     #amare()
     #bodyguardz()
     #lifevan()
     #mfgdot()
     #young_living()
-
+    #pura()
+    monat()
     #kits_from_ASC_to_SQL(r"..\..\..\Desktop\customer_kit_BOM.csv")
     pass
 
