@@ -1,11 +1,22 @@
 import pyodbc
+import os
 
 def connect_db(DB: str = 'Items'):
     '''Connect to a Microsoft Access database localy stored.
 
     '''
-    string = r'DBQ=..\..\..\db\{0:s}.accdb;'.format(DB)
-    #print(string)
+    string = ''
+
+    if os.path.isdir(r"C:\Users\David.Moreno\OneDrive - Visible SCM"):
+        string = r'DBQ=C:\Users\David.Moreno\OneDrive - Visible SCM\db\{0:s}.accdb;'.format(DB)
+
+    # Coding on my home computer
+    elif os.path.isdir('D:/OneDrive - Visible SCM'):
+        string = r'DBQ=D:\OneDrive - Visible SCM\db\{0:s}.accdb;'.format(DB)
+
+    else:
+        raise exception
+
     try:
         connection = pyodbc.connect(r'Driver={Microsoft Access Driver (*.mdb, *.accdb)};' + string)
         connection.autocommit = False

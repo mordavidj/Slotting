@@ -1,112 +1,249 @@
 import pandas as pd
+import pyodbc
 pd.set_option('max_columns', None)
 import numpy as np
-import datetime
+import datetime as dt
 from Pickface import *
 from DB import connect_db
 
 
 
-def remove_lol(hashkey: pd.DataFrame):
-    '''Filters out any orders in the hashkey that could be handled in LOL
-
-    '''
-    print("\nRemoving LOL orders . . . ", end = "")
-    tot_ord = len(hashkey)
-    by_date = hashkey.groupby('date')['hashkey'].value_counts().to_frame()
-    
-    lol_items = []
-
-    for ind, row in by_date.iterrows():
-        if row['hashkey'] >= 50:
-            hash = ind[1]
-            sum = 0
-            tmp_items = []
-            for h in hash.split(";"):
-                item, quant = h.split('*')
-                sum += int(quant)
-                tmp_items.append(item)
-
-            if sum <= 10:
-                hashkey = hashkey.drop(hashkey[(hashkey['date'] == ind[0]) & (hashkey.hashkey == ind[1])].index)
-                for i in tmp_items:
-                    if i not in lol_items:
-                        lol_items.append(i) 
-                        
-
-    #print(hashkey.groupby('date')['hashkey'].value_counts().to_frame())
-    print('Done')
-    print('Total Orders: {0:,}'.format(tot_ord))
-    print('Orders Removed: {0:,} ({1:.2%})'.format(tot_ord - len(hashkey), (tot_ord - len(hashkey)) / tot_ord))
-    print(lol_items)
-    print('Remaining: {0:,} ({1:.2%})'.format(len(hashkey), len(hashkey) / tot_ord))
-
-    return hashkey
-
-
-
-def load_hashkey(filepath):
-    '''Load a Power BI Hashkey report from a file and generate order configurations
-
-    '''
-    print(f'\nLoading hashkey: {filepath.split("/")[-1]} . . . ', end = '')
-
-    df = None
+def upload_orders(filepath, warehouse, client):
+    print(f'\nLoading hashkey: {filepath} . . . ', end = '')
 
     # Get the file type and read it in appropriately
     f_type = filepath.split('.')[-1]
     if f_type == 'csv':
         df = pd.read_csv(filepath,
-                         dtype = 'string')
+                            dtype = 'string')
 
     elif f_type == 'xlsx':
         df = pd.read_excel(filepath,
-                           dtype = 'string')
+                            dtype = 'string')
+
+    elif f_type == 'txt':
+        df = pd.read_csv(filepath,
+                            dtype = 'string',
+                            sep = '^')
 
     else:
-        raise f"Unrecognized filetype: .{f_type}"
+        raise f"Unrecognized filetype: .{f_type} \nExpected filetypes: .txt, .csv, .xlsx"
 
-    if 'Optimization Hash Key' in df.columns:
+    print(df)
+    print(df.dtypes)
+
+    if 'ORDERNUMBER' in df.columns:
+        df = generate_hashkey_ASC(df, client)
+
+    elif 'Optimization Hash Key' in df.columns:
         df = df.rename(columns = {'Created Date': 'date',
-                             'Optimization Hash Key': 'hashkey',
-                             'Client Order Number': 'order_number'})
-    df = df.set_index('order_number')
-
-    df['date'] = pd.to_datetime(df['date']).dt.date
-    
-    recent = df['date'].max()
-    d = recent - dt.timedelta(days=42)
-    df = df[df['date'] >= d]
-    
-
-    # Create order configuration if not already in dataframe
-    if 'order_config' not in df.columns:
-        df['order_config'] = ''
+                                  'Optimization Hash Key': 'hashkey',
+                                  'Client Order Number': 'order_number'})\
+                                    [['date', 'order_number', 'hashkey']]
         df['hashkey'] = df['hashkey'].str.replace(r';$', '')
 
         # Order configurations are hashkeys without quantities
         print('\nGenerating Order Configurations . . . ', end = '')
-        for ind, row in df.iterrows():
-            hashes = row['hashkey'].split(';')
-            config = ''
-            prefix = ''
-            for hash in hashes:
-                if hash != '':
-                    config += str(prefix + hash.split('*')[0])
-                    prefix = ';'
+        df['order_config'] = df.apply(
+            lambda row: ';'.join(
+                [h.split('*')[0] for h in row['hashkey'].split(';')]), 
+            axis =  1)
+        
+        df['date'] = df.apply(lambda row: pd.to_datetime(row['date']).round(freq='S'), axis = 1)
 
-            df.at[ind, 'order_config'] = config
+    else:
+        df['date'] = pd.to_datetime(df['date'])
+        print(df)
 
-        if f_type == 'csv':
-            df.to_csv(filepath)
-
-        elif f_type == 'xlsx':
-            df.to_excel(filepath) 
-
+    df['order_number'] = df.order_number.str.strip()
+    df['hashkey'] = df.hashkey.str.strip()
+    df['order_config'] = df.order_config.str.strip()
     
+    df = df.sort_values(by='date', ascending=False)\
+        .drop_duplicates(subset=['order_number']).set_index('order_number')
+    print('Done')
+    print(df)
+    cnxn = connect_db(warehouse)
+    crsr = cnxn.cursor()
+
+    if crsr.tables(table=client, tableType='TABLE').fetchone():
+        sql = 'SELECT TOP 1 [order_date] FROM [{0}] ORDER BY [order_date] DESC'.format(client)
+        print(sql)
+        crsr.execute(sql)
+        res = crsr.fetchone()
+        overlap_date = res[0] + dt.timedelta(days = 1)
+
+    else:
+        print(f'Creating new table {client} in {warehouse} orders database . . . ')
+        crsr.execute('''CREATE TABLE [{0}]
+                        ( [order_number]  VARCHAR
+                        , [order_date]    DATETIME
+                        , [hashkey]       LONGTEXT
+                        , [order_config]  LONGTEXT
+                        , CONSTRAINT [PrimaryKey] PRIMARY KEY ([order_number])
+                        , CONSTRAINT [UniqueKey] UNIQUE ([order_number]));'''.format(client))
+        cnxn.commit()
+        overlap_date = dt.datetime(1900,1,1,0,0,0)
+
+    new = df[df['date'] > overlap_date]
+    old = df[df['date'] <= overlap_date]
+
+    print('Inserting orders into {0} . . . '.format(client))
+    print(f'New Orders: {len(new):,}')
+    print(f'Old Orders: {len(old):,}')
+    if not new.empty:
+        sql = f"INSERT INTO [{client}] ([order_number], [order_date], [hashkey], [order_config]) VALUES(Trim([?]), Trim([?]), Trim([?]), Trim([?]))"
+        try:
+            crsr.executemany(sql, new.itertuples(index=True))
+            cnxn.commit()
+            print(f'New orders inserted: {len(new):,}')
+        except pyodbc.Error as err:
+            print(err)
+            print(f'Defaulting to serial insertion of {len(new):,} records . . . ')
+            old = df
+    
+    if not old.empty:
+        count = 0
+        for ind, row in old.iterrows():
+            try:
+                crsr.execute(f'INSERT INTO [{client}] ([order_number], [order_date], [hashkey], [order_config]) VALUES([?], [?], [?], [?]);',
+                             (ind, row['date'], row['hashkey'], row['order_config']))
+                count += 1
+            except pyodbc.Error as err:
+                if err.args[0] != '23000':
+                    print(err)
+
+        if count > 0:
+            cnxn.commit()
+        print(f'{count:,}/{len(old):,} records inserted individually.')
+
+    crsr.close()
+    cnxn.close()
 
     print('Done')
 
+
+def get_hashkey(warehouse:str, client:str, period:int = 42):
+    if warehouse is None or warehouse is '':
+        raise Exception("Warehouse must be specified.")
+    if client is None or client is '':
+        raise Exception("Client must be specified.")
+
+    cnxn = connect_db(warehouse)
+    crsr = cnxn.cursor()
+
+    crsr.execute('SELECT TOP 1 order_date FROM {0} ORDER BY order_date DESC'.format(client))
+    res = crsr.fetchone()
+    latest_date = res[0]
+    
+    d = (latest_date - dt.timedelta(days=period)).strftime("%Y-%m-%d")
+
+    print('Getting orders from {0} to {1} . . . '.format(
+        d, latest_date.strftime("%Y-%m-%d")), end = '')
+
+    orders_sql = '''SELECT t.order_number, t.order_date, t.hashkey, t.order_config
+                    FROM {0} AS t
+                    WHERE t.order_date >= #{1}#;'''.format(client, d)
+
+    df = pd.read_sql(orders_sql, cnxn).set_index('order_number')
+
+    return df.rename(columns = {'order_date': 'date'})
+
+def load_hashkey(filepath:str = None, warehouse:str = 'WJ', client:str = None, period:int = 42):
+    '''Load a Power BI Hashkey report from a file and generate order configurations
+
+    '''
+    if client is None:
+        raise "Client must be specified."
+
+    df = None
+
+    cnxn = connect_db(warehouse)
+    crsr = cnxn.cursor()
+
+    if not pd.isna(filepath) and filepath is not None:
+        print(f'\nLoading hashkey: {filepath} . . . ', end = '')
+
+        # Get the file type and read it in appropriately
+        f_type = filepath.split('.')[-1]
+        if f_type == 'csv':
+            df = pd.read_csv(filepath,
+                             dtype = 'string')
+
+        elif f_type == 'xlsx':
+            df = pd.read_excel(filepath,
+                               dtype = 'string')
+
+        elif f_type == 'txt':
+            df = pd.read_csv(filepath,
+                             dtype = 'string',
+                             sep = None,
+                             engine = 'python')
+
+        else:
+            raise f"Unrecognized filetype: .{f_type} \nExpected filetypes: .txt, .csv, .xlsx"
+
+        if 'Optimization Hash Key' in df.columns:
+            df = df.rename(columns = {'Created Date': 'date',
+                                 'Optimization Hash Key': 'hashkey',
+                                 'Client Order Number': 'order_number'})\
+                                     [['date', 'order_number', 'hashkey']]\
+                                     .set_index('order_number')
+            df['hashkey'] = df['hashkey'].str.replace(r';$', '')
+
+            # Order configurations are hashkeys without quantities
+            print('\nGenerating Order Configurations . . . ', end = '')
+            df['order_config'] = df.apply(
+                lambda row: ';'.join(
+                    [h.split('*')[0] for h in row['hashkey'].split(';')]), 
+                axis =  1)
+            print('Done')
+        df['date'] = pd.to_datetime(df['date'])
+
+        crsr.execute('SELECT TOP 1 order_date FROM {0} ORDER BY order_date DESC'.format(client))
+        res = crsr.fetchone()
+        if res:
+            overlap_date = res[0]
+            print(len(df))
+            print(overlap_date)
+            df = df[df['date'] > overlap_date]
+            print(len(df))
+            print(df)
+        print('Inserting orders into db: {0} . . . '.format(warehouse), end = '')
+        sql = f"INSERT INTO {client.upper()} (order_number, order_date, hashkey, order_config) VALUES(?, ?, ?, ?)"
+        try:
+            crsr.executemany(sql, df.itertuples(index=True))
+            cnxn.commit()
+        except pyodbc.Error as err:
+            print(err)
+            print('Saving hashkey to excel')
+            f_type = 'xlsx'
+            path = '.'.join(filepath.split('.')[:-1]) + '.' + f_type
+            print(path)
+            df.to_excel(path) 
+
+        print('Done')
+
+    crsr.execute('SELECT TOP 1 order_date FROM {0} ORDER BY order_date DESC'.format(client))
+    res = crsr.fetchone()
+    latest_date = res[0]
+    
+    d = (latest_date - dt.timedelta(days=period)).strftime("%Y-%m-%d")
+    print('Getting orders from {0} to {1} . . . '.format(
+        d, latest_date.strftime("%Y-%m-%d")), end = '')
+    #print(d)
+    orders_sql = '''SELECT t.order_number, t.order_date, t.hashkey, t.order_config
+                    FROM {0} AS t
+                    WHERE t.order_date >= #{1}#;'''.format(client, d)
+
+    #print(orders_sql)
+
+    df = pd.read_sql(orders_sql, cnxn).set_index('order_number')
+    #print(df)
+    df = df.rename(columns = {'order_date': 'date'})
+    #df['date'] = pd.to_datetime(df['date']).dt.date
+    print('Done')
+    
     return df
 
 
@@ -129,26 +266,11 @@ def generate_hashkey(df):
 
 
 
-def generate_hashkey_ASC(filepath, cust):
+def generate_hashkey_ASC(df:pd.DataFrame, client:str):
     '''Take a file from ASC and generate hashkeys and order configs
 
     '''
-    print(f'\nGenerating Hashkey from ASC file: {filepath} . . . ')
-
-    df = None
-
-    # Get the file type and read it in appropriately
-    f_type = filepath.split('.')[-1]
-    if f_type == 'csv':
-        df = pd.read_csv(filepath,
-                         dtype = 'string')
-
-    elif f_type == 'xlsx':
-        df = pd.read_excel(filepath,
-                           dtype = 'string')
-
-    print(df)
-
+   
     dict = {}
     hash = []
     config = []  
@@ -165,7 +287,7 @@ def generate_hashkey_ASC(filepath, cust):
 
     item_sql = '''SELECT i.ASC_id 
                   FROM Item AS i
-                  WHERE i.customer = ucase('{0:s}');'''.format(cust)
+                  WHERE i.customer = ucase('{0:s}');'''.format(client)
 
     items = pd.read_sql(item_sql, cnxn).set_index('ASC_id')
     item_id = list(items.index.values)
@@ -173,7 +295,7 @@ def generate_hashkey_ASC(filepath, cust):
     
     kit_sql = '''SELECT k.ASC_id
                  FROM Kit AS k
-                 WHERE k.customer = ucase('{0:s}');'''.format(cust)
+                 WHERE k.customer = ucase('{0:s}');'''.format(client)
 
     #kits = pd.read_sql(kit_sql, cnxn).set_index('kit_id')
 
@@ -183,13 +305,17 @@ def generate_hashkey_ASC(filepath, cust):
     cnxn.close()
 
     print('Done\nBuilding hashkey from items and kits . . . ', end = '')
+    if 'SHIPDATE' in df.columns:
+        col = 'SHIPDATE'
+    else:
+        col = 'OURORDERDATE'
 
     for index, row in df.iterrows():
         
         # If the it item can be converted into a date, it's a new item
         try:
-            date_time = datetime.datetime.strptime(row['SHIPDATE'], 
-                                                   "%m/%d/%Y %I:%M:%S %p")
+            date_time = dt.datetime.strptime(row[col], 
+                                             "%m/%d/%Y %I:%M:%S %p")
             for i in sorted(dict.keys()):
                 hash.append(str(i + '*' + dict[i]))
                 config.append(i)
@@ -210,10 +336,10 @@ def generate_hashkey_ASC(filepath, cust):
             if row['ORDERNUMBER'] in item_id:
 
                 if row['ORDERNUMBER'] in dict.keys():
-                    dict[row['ORDERNUMBER']] += row['SHIPDATE']
+                    dict[row['ORDERNUMBER']] += row[col]
 
                 else:
-                    dict[row['ORDERNUMBER']] = row['SHIPDATE']
+                    dict[row['ORDERNUMBER']] = row[col]
 
             #elif row['ORDERNUMBER'] in kit_id:
             #    continue
@@ -233,6 +359,7 @@ def generate_hashkey_ASC(filepath, cust):
                                                'hashkey', 'order_config'])
 
     hashkey = hashkey[hashkey['hashkey'] != '']
+
     print('Done')
     return hashkey
 
@@ -301,7 +428,10 @@ def min_max_from_hashkey(hashkey, case_info):
     
     # Split the hashkey into items and quantities
     df[['item_id', 'qty']] = df['hashkey'].str.split('*', expand=True)
-    df['qty'] = df['qty'].astype(int)
+    try:
+        df['qty'] = df['qty'].astype(float)
+    except:
+        print(df['qty'].max())
     #print(df)
 
     # Get the total shipped each day
@@ -312,6 +442,7 @@ def min_max_from_hashkey(hashkey, case_info):
     # Pivot so that day sums of all item quantities are aligned on the same row with the date
     pivot_df = df.pivot(index = 'date', columns = 'item_id', values = 'qty')
     min_max = pd.DataFrame(columns = ['item_id', '80', '90'])
+    pivot_df = pivot_df.fillna(0)
     #print(pivot_df)
 
     for i in range(0, len(pivot_df.columns)):
@@ -321,12 +452,18 @@ def min_max_from_hashkey(hashkey, case_info):
                                  ignore_index = True)
 
     #print(min_max)
+    tmp = min_max.set_index('item_id')
+    tmp['80'] = tmp['80'].astype(int)
+    tmp['90'] = tmp['90'].astype(int)
+    #print(tmp)
+    tmp.to_csv('MANSCAPED_MIN-MAX.csv')
+
     case_info = case_info[['case_qty']]
     min_max = min_max.set_index('item_id').join(case_info, how='left')
 
-    print(min_max)
-    min_max['min'] = min_max.apply(lambda row: to_int(np.ceil(row['80'] / row['case_qty'])) if row['case_qty'] is not None else 0, axis = 1)
-    min_max['max'] = min_max.apply(lambda row: to_int(np.ceil(row['90'] / row['case_qty'])) if row['case_qty'] is not None else 0, axis = 1)
+    #print(min_max)
+    min_max['min'] = min_max.apply(lambda row: to_int(np.ceil(row['80'] / row['case_qty'])) if row['case_qty'] else 1, axis = 1)
+    min_max['max'] = min_max.apply(lambda row: to_int(np.ceil(row['90'] / row['case_qty'])) if row['case_qty'] else 1, axis = 1)
     
     print('Done')
     #print(min_max)
@@ -335,11 +472,82 @@ def min_max_from_hashkey(hashkey, case_info):
 
 
 
+def remove_lol(hashkey: pd.DataFrame):
+    '''Filters out any orders in the hashkey that could be handled in LOL
+
+    '''
+    #print("\nRemoving LOL orders . . . ", end = "")
+    #tot_ord = len(hashkey)
+    #by_date = hashkey.groupby('date')['hashkey'].value_counts().to_frame()
+    ##print(by_date)
+    #for ind, row in by_date.iterrows():
+    #    if row['hashkey'] >= MIN_LOL_ORDERS:
+    #        hash = ind[1]
+    #        sum = 0
+    #        for h in hash.split(";"):
+    #            sum += int(h.split("*")[-1])
+    #
+    #        if sum <= 10:
+    #            hashkey = hashkey.drop(hashkey[(hashkey['date'] == ind[0]) & (hashkey.hashkey == ind[1])].index)
+    #
+    ##print(hashkey.groupby('date')['hashkey'].value_counts().to_frame())
+    #print('Done')
+    #print('Total Orders: {0:,}'.format(tot_ord))
+    #print('Orders Removed: {0:,} ({1:.2%})'.format(tot_ord - len(hashkey), (tot_ord - len(hashkey)) / tot_ord))
+    #print('Remaining: {0:,} ({1:.2%})'.format(len(hashkey), len(hashkey) / tot_ord))
+
+    print("\nRemoving LOL orders . . . ", end = "")
+        
+    #lol_hashkey = copy.deepcopy(hashkey)
+    hashkey['d'] = pd.to_datetime(
+        hashkey.apply(lambda row: pd.to_datetime(row['date']) + dt.timedelta(days=1) if row['date'].hour >= 12 else row['date'], 
+                          axis = 1))\
+                              .dt.date
+    
+    hashkey['s'] = hashkey.apply(lambda row: 1 if row['date'].hour >= 12 or row['date'].hour < 5 else 2, axis = 1)
+    
+    by_schedule = hashkey.groupby(['d', 's'])['hashkey'].value_counts().to_frame()
+    print(by_schedule)
+    
+    ord_sum = len(hashkey)
+
+    for ind, row in by_schedule.iterrows():
+        if row['hashkey'] >= MIN_LOL_ORDERS:
+            hash = ind[2]
+            sum = 0
+            tmp_items = []
+            s_hash = hash.split(';')
+
+            if len(s_hash) <= MAX_LOL_LINES:
+                for h in s_hash:
+                    item, quant = h.split('*')
+                    sum += int(quant)
+
+                if sum <= MAX_LOL_ITEMS:
+                    hashkey = hashkey.drop(
+                        hashkey[(hashkey['d'] == ind[0])\
+                            & (hashkey.s == ind[1])\
+                            & (hashkey.hashkey == hash)].index)
+ 
+                        
+
+    #print(hashkey.groupby('date')['hashkey'].value_counts().to_frame())
+    print('Done')
+    print('\nTotal Orders: {0:,}'.format(ord_sum))
+    print('Orders Removed: {0:,} ({1:.2%})'.format(
+        ord_sum - len(hashkey), (ord_sum - len(hashkey)) / ord_sum))
+
+    print('Remaining: {0:,} ({1:.2%})'.format(len(hashkey), len(hashkey) / ord_sum))
+    #print(hashkey)
+    return hashkey.drop(columns=['d','s'])
+
+
+
 def to_int(val):
     '''Format NaN's, None's, and others into integers
     
     '''
     if math.isnan(val) or val is None or pd.isna(val):
-        return ''
+        return 0
     else:
         return int(val)

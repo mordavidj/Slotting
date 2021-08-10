@@ -1,12 +1,29 @@
 import pandas as pd
 pd.set_option('max_columns', None)
-import datetime
+#pd.set_option('max_rows', None)
+import math
+import csv
+import datetime as dt
+import os
+import copy
+import matplotlib.pyplot as plt
+import pyodbc
+import numpy as np
+import multiprocessing as mp
 from Slotting import *
-from Pickface import *
-from Item import *
-from DB import *
 from Hashkey import *
-from GUI import *
+
+MAX_PROCESSORS = 6
+
+POD = [1, 3, 3]
+HVPNP = [3, 3, 3]
+PNP = [4, 3, 4]
+
+MIN_LOL_ORDERS = 50
+MAX_LOL_LINES = 3
+MAX_LOL_ITEMS = 5
+
+ROWS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']
 
 
 POD = [1, 3, 3]
@@ -14,399 +31,801 @@ HVPNP = [3, 3, 3]
 PNP = [4, 3, 4]
 
 
+def test():
+    df_wj = load_hashkey(r"C:\Users\David.Moreno\OneDrive - Visible SCM\Coding\Slotting\Slotting\data\YoungLiving_WJ_OHK.xlsx")
+    df_me = load_hashkey(r"C:\Users\David.Moreno\OneDrive - Visible SCM\Coding\Slotting\Slotting\data\YoungLiving_ME_OHK.xlsx")
+    df_lu = load_hashkey(r"C:\Users\David.Moreno\OneDrive - Visible SCM\Coding\DATA\LUME_OHK.xlsx")
 
-def waldo():
-    feb = pd.read_csv('data/7826_3PFShippingDetails_Feb 2021.csv',
-                      header = 2,
-                      na_values = 0,
-                      dtype = {'Part Number': 'string',
-                               'Order Number': 'string'})\
-                                   .rename(columns = {'Order Number': 'order_number',
-                                                      'Part Number': 'item_id',
-                                                      'Quantity': 'quantity'})
-    #print(feb.head())
-    #print(feb.dtypes)
-    #print(len(feb))
-    mar = pd.read_csv('data/7826_3PFShippingDetails_March until 19.03.2021 .csv',
-                      header = 2,
-                      dtype = {'Part Number': 'string',
-                               'Order Number': 'string'},
-                      na_values = 0)\
-                          .rename(columns = {'Order Number': 'order_number',
-                                             'Part Number': 'item_id',
-                                             'Quantity': 'quantity'})
-    #print(len(mar))
-
-    df = feb.append(mar, ignore_index = True)
-    df['quantity'] = df['quantity'].fillna(0).astype(int)
-
-    #print(len(df))
-
-    h = generate_hashkey(df)
-
-    #print(h)
-
-    slotting(h, [27, 48], 'Waldo')
-
-
-
-def level():
-
-    df = load_powerBI_hashkey('data/LeVel Optimization Hashkey.csv')
-    print(df)
-    df['datetime'] = pd.to_datetime(df['date'])
-    df['day'] = df['datetime'].dt.day
-
-    sub = df[df.day.isin([5, 15, 25])]
-    norm = df[~df.day.isin([5, 15, 25])]
-
-    print(sub.date.value_counts())
-    print(norm.date.value_counts())
-
-    pf_norm = slotting(norm, [48], 'LeVel-normal', [15, 15, 40])
-    pf_sub = slotting(sub, [48], 'LeVel-sub', [15, 15, 40])
-
-    #pf2 = continuous_slotting(hashkey, [48, 32], 'TruVision_continuous')
-
-    norm_lst = pf_norm[0].list_items()
-    sub_lst = pf_sub[0].list_items()
+    hashkey_wj = df_wj[(df_wj['date'] >= dt.date(year=2021, month=6, day=27)) & (df_wj['date'] <= dt.date(year=2021, month=7, day=3))]
+    hashkey_me = df_me[(df_me['date'] >= dt.date(year=2021, month=6, day=27)) & (df_me['date'] <= dt.date(year=2021, month=7, day=3))]
+    hashkey_lu = df_lu[(df_lu['date'] >= dt.date(year=2021, month=6, day=27)) & (df_lu['date'] <= dt.date(year=2021, month=7, day=3))]
     
-    #print(norm_lst)
-    #print(sub_lst)
+    print(hashkey_wj)
+    print(hashkey_me)
+    print(hashkey_lu)
 
-    print('\nItems in normal but not subscription:')
-    for i in norm_lst:
-        if i not in sub_lst:
-            print(i)
+    single_single_analyze(hashkey_wj)
+    single_single_analyze(hashkey_me)
+    single_single_analyze(hashkey_lu)
 
-    print('\nItems in subscription but not normal:')
-    for i in sub_lst:
-        if i not in norm_lst:
-            print(i)
+#test()
 
+def test1():
+    hashkey = load_hashkey(r"C:\Users\David.Moreno\OneDrive - Visible SCM\Coding\DATA\MANSCAPED_hashkey.csv")
 
+    pf_mk = Pickface()
+    pf_mk.from_csv(r"C:\Users\David.Moreno\OneDrive - Visible SCM\Coding\Slotting\Slotting\data\MANSCAPED-MK.csv")
+    pf_mh = Pickface()
+    pf_mh.from_csv(r"C:\Users\David.Moreno\OneDrive - Visible SCM\Coding\Slotting\Slotting\data\MANSCAPED-MH.csv")
 
-def level_continuous():
-    hashkey = load_powerBI_hashkey('data/LeVel Optimization Hashkey.csv')
-
-    pf2 = continuous_slotting(hashkey, [48, 32], 'LeVel_continuous')
-
-
-
-def nuskin():
-    #hashkey = load_powerBI_hashkey('data/nuskin_hashkey.csv')
-
-    #print(hashkey[['date', 'hashkey']].groupby('date').agg(['count']))
-
-    ignored = ['01003882', '01003883', '01102892', '01003904', 
-               '01310011', '01003440', '01003901', '01003529']
-
-    #pf = slotting(hashkey, [27], 'NuSkin', ignore = ignored)
-
-    #pf1 = Pickface()
-    #pf1.from_csv(r"..\..\..\Desktop\Nuskin-Memphis-27.csv")
-    #evaluate_pf(hashkey, pf1)
-
-    df = pd.read_csv('../../../Desktop/Nuskin_hashkey_lookup.csv',
-                     dtype = 'string')\
-                         .rename(columns = {'Created Date': 'datetime',
-                                            'Optimization Hash Key': 'hashkey'})
-    df['datetime'] = pd.to_datetime(df['datetime'])
-    df['date'] = df['datetime'].dt.date
-    df['day'] = df['datetime'].dt.day
-    print(len(df))
+    evaluate([pf_mk, pf_mh], hashkey, True)
     
-    df = df[df['day'] >= 9]
-    df['item_count'] = 0
-    tot = len(df)
-    print(tot)
+#test1()
 
-    for index, row in df.iterrows():
-        hashkey = row['hashkey'].split(';')[:-1]
-        i_count: int = 0
-        for hash in hashkey:
-            i_count += int(hash.split('*')[-1])
-        df.at[index, 'item_count'] = i_count
+def test2():
+    #generate_hashkey_ASC(r"C:\Users\David.Moreno\OneDrive - Visible SCM\Desktop\xyngular_WJ_orders.csv", 'XYNGULAR')
+    #generate_hashkey_ASC(r"C:\Users\David.Moreno\OneDrive - Visible SCM\Desktop\xyngular_ATL_orders.csv", 'XYNGULAR')
 
-    over = df[df.item_count > 12]
-
-    print(len(over))
-    print(len(over) / tot)
-    max = int(round(over.item_count.max()))
-    print(f'Max = {max:,}')
-
-
- 
-def epicure():
-    kits_from_ASC_to_SQL(r"..\..\..\Desktop\epicure_kit_BOM.csv")
-    pfs = [48]
-
-    #hashkey = generate_hashkey_ASC(r'..\..\..\Desktop\epicure_orders_and_quantities.csv' , 'Epicure')
-
-    #hashkey = hashkey.set_index('order_number')
-
-    #hashkey.to_csv('data/epicure_hashkey.csv')
-
-    hashkey = load_hashkey('data/epicure_hashkey.csv')
-
-    pf = slotting(hashkey, pfs, 'Epicure', [15, 15, 15])
-
-
-def truvision():
-    pfs = [[1, 4, 5], [4, 3, 4]]
-    height = [[15, 15, 15, 99], [15, 14, 16]]
-    prio = [[2, 1, 0, 3], [1, 0, 2]]
-        
-    #hashkey = generate_hashkey_ASC(r"..\..\..\Desktop\truvision_asc_orders_and_quantities.csv", 'truvision')
-
-    #print(hashkey.head())
-
-    #hashkey = hashkey.set_index('order_number')
-
-    #hashkey.to_csv('data/truvision_hashkey.csv')
-
-    hashkey = load_hashkey('data/truvision_hashkey.csv')
-
-    #top_vel = build_by_velocity(hashkey, pfs[0])
-
-    #Difference of ~300 orders (0.3%) more when built by velocity and not order configuration
-
-    required = ['PROP65']
-
-    #pf = slotting(hashkey, pfs, 'TRUVISION', height, prio, require = required)
-    
-    #print(hashkey['date'].value_counts().sort_index())
-    #pf2 = continuous_slotting(hashkey, [48, 32], 'TruVision_continuous')
-
-
-
-def lifevan():
-    #kits_from_ASC_to_SQL(r"..\..\..\Desktop\lifevan_kit_BOM.csv")
-    #hashkey = generate_hashkey_ASC('../../../Desktop/lifevan_asc.csv', 'LIFEVAN')
-    #hashkey = hashkey.set_index('order_number')
-    #hashkey.to_csv('data/lifevan_hashkey.csv')
-    hashkey = load_hashkey('data/lifevan_hashkey.csv')
-    print(hashkey)
-    nums = [27, 48]
-    pf = slotting(hashkey, nums, 'LIFEVAN', [20, 20, 20])
-
-
-
-def manscaped():
-    kits_from_ASC_to_SQL(r"..\..\..\Desktop\manscaped_kit_BOM.csv")
-
-
-
-def amare():
-    kits_from_ASC_to_SQL(r"..\..\..\Desktop\amare_kit_BOM.csv")
-
-
-
-def bodyguardz():
-    #kits_from_ASC_to_SQL(r"..\..\..\Desktop\bodyguardz_kit_BOM.csv")
-    #hashkey = generate_hashkey_ASC(r"..\..\..\Desktop\batch_1834971.csv", 
-    #                               'BODYGUARDZ')
-    #hashkey.to_csv('data/bodyguardz_hashkey.csv')
+    #hash_pura_wj = load_hashkey(r"C:\Users\David.Moreno\OneDrive - Visible SCM\Coding\DATA\PURA_WJ_hashkey.csv")
+    hash_pura_atl = load_hashkey(r"C:\Users\David.Moreno\OneDrive - Visible SCM\Coding\DATA\PURA_ATL_hashkey.csv")
     #print(hashkey)
+    #single_single_analyze(hashkey)
+    pf_pura = Pickface()
+    pf_pura.from_csv(r"C:\Users\David.Moreno\OneDrive - Visible SCM\Coding\Slotting\Slotting\data\PURA_ATL_24_PRA.csv")
+    evaluate([pf_pura], hash_pura_atl, True)
 
-    #hashkey = load_hashkey('data/bodyguardz_hashkey.csv')
-    single_single(r"..\..\..\Desktop\batch_1834975.csv")
+    hash_xyng_wj = load_hashkey(r"C:\Users\David.Moreno\OneDrive - Visible SCM\Coding\DATA\XYNGULAR_WJ_hashkey.csv")
+    hash_xyng_atl = load_hashkey(r"C:\Users\David.Moreno\OneDrive - Visible SCM\Coding\DATA\XYNGULAR_ATL_hashkey.csv")
 
+    pf_xyng_wj = Pickface()
+    pf_xyng_wj.from_csv(r"C:\Users\David.Moreno\OneDrive - Visible SCM\Coding\Slotting\Slotting\data\XYNGULAR_WJ_27.csv")
+    pf_xyng_atl_pod = Pickface()
+    pf_xyng_atl_pod.from_csv(r"C:\Users\David.Moreno\OneDrive - Visible SCM\Coding\Slotting\Slotting\data\XYNGULAR_ATL_POD_XYF.csv")
+    pf_xyng_atl_54 = Pickface()
+    pf_xyng_atl_54.from_csv(r"C:\Users\David.Moreno\OneDrive - Visible SCM\Coding\Slotting\Slotting\data\XYNGULAR_ATL_54_XYN.csv")
 
+    evaluate([pf_xyng_wj], hash_xyng_wj, True)
+    evaluate([pf_xyng_atl_pod, pf_xyng_atl_54], hash_xyng_atl, True)
 
+#test2()
 
-def mfgdot():
-    #kits_from_ASC_to_SQL(r"..\..\..\Desktop\mfgdot_kit_BOM.csv")
-    hashkey = generate_hashkey_ASC(r"..\..\..\Desktop\doterra_orders_and_quantities.csv", 
-                                   'MFGDOT')
-    print(hashkey)
-    hashkey.to_csv('data/mfgdot_hashkey.csv')
-    
-    hashkey = load_hashkey('data/mfgdot_hashkey.csv')
-    top_vel = build_by_velocity(hashkey, 48)
+def test3():
+    hashkey = load_hashkey(r"C:\Users\David.Moreno\OneDrive - Visible SCM\Coding\DATA\TRUVISION_hashkey.csv")
+    pf_48 = Pickface()
+    pf_48.from_csv(r"C:\Users\David.Moreno\OneDrive - Visible SCM\Coding\Slotting\Slotting\data\TruVision-48.csv")
+    pf_pod = Pickface()
+    pf_pod.from_csv(r"C:\Users\David.Moreno\OneDrive - Visible SCM\Coding\Slotting\Slotting\data\TruVision-9.csv")
 
+    evaluate([pf_48, pf_pod], hashkey, True)
 
+#test3()
 
-def young_living():
-    hashkey = load_powerBI_hashkey(r"..\..\..\Desktop\younglivingorders.csv")
-    print(hashkey.date.max())
-    print(hashkey.date.min())
-    new_pf = Pickface()
-    new_pf.from_csv(r"data\YoungLiving-28.csv")
-    new_pf.display()
-    new_pf.evaluate(hashkey)
+def test4():
+    df_frame = []
+    df_pf_info = []
+    df_items = []
 
-    pf = slotting(hashkey, [27], 'YOUNGLIVING', [15,15,15])
+    #generate_hashkey_ASC(r"C:\Users\David.Moreno\OneDrive - Visible SCM\Desktop\doterra_ATL_orders.csv", 'DOTERRA')
 
+    slotting(pd.Series({'client': 'BODYGUARDZ', 
+                        'hashkey': r"C:\Users\David.Moreno\OneDrive - Visible SCM\Coding\DATA\hashkey\BODYGUARDZ_hashkey.csv", 
+                        'lol': 'FALSE', 
+                        'single': 'FALSE', 
+                        'pfs': '1,4,25', 
+                        'heights': '99,99,99,99', 
+                        'required': None, 
+                        'ignored': None}, 
+                       index = ['client', 'hashkey', 'lol', 'single', 'pfs', 'heights', 'required', 'ignored']), 
+             df_frame, df_pf_info, df_items)
 
+    slotting(pd.Series({'client': 'BODYGUARDZ', 
+                        'hashkey': r"C:\Users\David.Moreno\OneDrive - Visible SCM\Coding\DATA\hashkey\BODYGUARDZ_hashkey.csv", 
+                        'lol': 'FALSE', 
+                        'single': 'FALSE', 
+                        'pfs': '1,4,50', 
+                        'heights': '99,99,99,99', 
+                        'required': None, 
+                        'ignored': None}, 
+                       index = ['client', 'hashkey', 'lol', 'single', 'pfs', 'heights', 'required', 'ignored']), 
+             df_frame, df_pf_info, df_items)
 
-def pura():
-    pfs1 = [POD, HVPNP, PNP]
-    pfs2 = [HVPNP, PNP]
-    pfs3 = [PNP]
-    h1 = [[99,99,99], [99,99,99], [99,99,99]]
-    h2 = [[99,99,99], [99,99,99]]
-    h3 = [[99,99,99]]
-    prio1 = [[1, 0, 2], [1, 0, 2], [1, 0, 2]]
-    prio2 = [[1, 0, 2], [1, 0, 2]]
-    prio3 = [[1, 0, 2]]
-        
-    hashkey = generate_hashkey_ASC(r"..\..\..\Desktop\pura_orders_and_quantities.csv", 'pura')
+    pfs_info = pd.DataFrame(df_pf_info, columns = ['Client', 'Type', 'Order', 'Percent', 'strPercent', 'Items'])
+    print(pfs_info)
 
-    hashkey = hashkey.set_index('order_number')
+    columns = ['client', 'pickface', 'location', 'item_id', 'desc', 'bay', 'row', 
+                'col', 'min', 'max']
+    pfs = pd.DataFrame(df_frame, columns = columns)
 
-    hashkey.to_csv('data/pura_hashkey.csv')
-    
-    #hashkey = load_hashkey('data/pura_hashkey.csv')
+    items = pd.DataFrame(df_items, columns = ['Client', 'Pickface', 'Item', 'Percent', 'Average'])
 
-    pf1 = slotting(hashkey, pfs1, 'PURA', h1, prio1)
-    pf2 = slotting(hashkey, pfs2, 'PURA', h2, prio2)
-    pf3 = slotting(hashkey, pfs3, 'PURA', h3, prio3)
+    print(pfs)
+    pfs.to_csv('pfs_BODYGUARDZ.csv')
+    pfs_info.to_csv('pfs_info_BODYGUARDZ.csv')
 
-    return
-    
+#test4()
 
+def test5():
+    hashkey = load_hashkey(r"C:\Users\David.Moreno\OneDrive - Visible SCM\Coding\DATA\hashkey\BODYGUARDZ_hashkey.csv")
+    #hashkey = remove_lol(hashkey)
 
-def monat():
-    pfs = [HVPNP, PNP]
-    h = [[99, 99, 99], [99, 99, 99]]
-    p = [[1, 0, 2], [1, 0, 2]]
+    df = pd.concat([pd.Series(row['date'], row['hashkey'].split(';')) for _, row in hashkey.iterrows()]).reset_index()
+    df = df.rename(columns = {'index': 'hashkey', 0: 'date'})
+    df = df[df['hashkey'] != '']
+    print(df)
 
-    hashkey = load_hashkey('data/Monat_OHK.xlsx')
+    cnxn = connect_db()
 
-    hashkey = remove_lol(hashkey)
-
-    pf = slotting(hashkey, pfs, 'MONAT', h, p)
-
-
-
-def cheese(*args, **kwargs):
-    print(f'args: {args}, kwargs: {kwargs}')
-
-
-
-def kits_from_ASC(filepath, cust):
-    df = pd.read_csv(filepath,
-                      dtype = "string")
-
-    dict = {}
-    n_frame = []    # Stores all items in the desired format
-    n_row = []      # Keeps each order together in one row
-    hash = []
-
-
-    for index, row in df.iterrows():
-        
-        # If the it item can be converted into a date, it's a new item
-        if row['VMI_CUSTID'] == cust:
-            for i in sorted(dict.keys()):
-                hash.append(str(i + '*' + dict[i]))
-            
-            n_row.append(';'.join(hash))
-            n_frame.append(n_row.copy())
-            dict = {}
-            hash.clear()
-            
-            #print(n_frame)
-            n_row.clear()
-            n_row.append(row['VMI_CUSTID'])
-            n_row.append(row['ITEMID'])
-            n_row.append(row['DESCRIPTION'])
-
-        else:
-            dict[str(row["VMI_CUSTID"])] = str(row["ITEMID"])
-
-    for i in sorted(dict.keys()):
-        hash.append(str(i + '*' + dict[i]))
-            
-    n_row.append(';'.join(hash))
-    n_frame.append(n_row.copy())
-
-    # first item is a blank line, so pop it
-    n_frame.pop(0)
-    kits = pd.DataFrame(n_frame, columns = ['customer', 'kit_id', 'description', 'hashkey'])
-    kits = kits.set_index('client').sort_values('kit_id')
-    kits.to_csv(f'data/{cust}_kits.csv')
-    print('Done')
-
-    return kits
-
-
-
-def kits_from_ASC_to_SQL(filepath):
-    print(f'Getting kits from ASC for SQL . . . ', end = '')
-
-    df = pd.read_csv(filepath,
-                      dtype = "string")
-
-    dict = {}   # Associate items and quantities
-    kits = []   # Stores all items in the desired format
-    kiq = []    # Keeps each order together in one row
-    kit = ''    # Store the kit id while adding items
-    cust = ''   # Store the customer id while adding items
+    #print(order_count)
+    #print(len(order_count[order_count.order_count == 1]))
 
     # Connect to DB to get item info
-    cnxn = connect_db()
-    if type(cnxn) is int:
-        return
+    item_sql = '''SELECT i.ASC_id AS item_id, i.description
+                    FROM Item AS i
+                    WHERE i.customer = ucase('{0:s}');'''.format('bodyguardz')
 
-    cust_sql = '''SELECT customer_id
-                  FROM Customer;'''
+    item_info = pd.read_sql(item_sql, cnxn).set_index('item_id')
 
-    cust_df = pd.read_sql(cust_sql, cnxn)
+    print(item_info)
 
-    custs = list(cust_df['customer_id'])
+    cnxn.close()
     
+    # Split the hashkey into items and quantities
+    df[['item_id', 'qty']] = df['hashkey'].str.split('*', expand=True)
+    try:
+        df['qty'] = df['qty'].astype(float)
+    except:
+        print(df['qty'].max())
+    #print(df)
 
-    for index, row in df.iterrows():
+    # Get the total shipped each day
+    df = df.groupby(['date', 'item_id']).agg({'qty': 'sum'})
+    df.reset_index(inplace=True)
+    print(df)
 
-        if pd.notna(row['VMI_CUSTID']):
-            # If the it item can be converted into a date, it's a new item
-            if row['VMI_CUSTID'].upper() in custs:
-                cust = row['VMI_CUSTID']
-                kit = row['ITEMID']
-                kits.append([cust, kit, row['DESCRIPTION']])
+    # Pivot so that day sums of all item quantities are aligned on the same row with the date
+    pivot_df = df.pivot(index = 'date', columns = 'item_id', values = 'qty')
+    min_max = pd.DataFrame(columns = ['item_id', 'mean', 'median', 'max'])
+    pivot_df = pivot_df.fillna(0)
+    #print(pivot_df)
 
-            else:
-                kiq.append([cust, kit, row['VMI_CUSTID'], row["ITEMID"]])
+    for i in range(0, len(pivot_df.columns)):
+        min_max = min_max.append({'item_id': str(pivot_df.columns[i]),
+                                  'mean': pivot_df[pivot_df.columns[i]].mean(), 
+                                  'median': pivot_df[pivot_df.columns[i]].median(),
+                                  'max': pivot_df[pivot_df.columns[i]].max()}, 
+                                 ignore_index = True)
+
+    min_max = min_max.set_index('item_id').join(item_info, how='left')
+
+    min_max.to_excel('BODYGUARDZ_item_velocity.xlsx')
+
+#test5()
+
+def test6():
+    hashkey = load_hashkey(r"C:\Users\David.Moreno\OneDrive - Visible SCM\Coding\DATA\LEVEL_hashkey.xlsx")
+    df = pd.concat([pd.Series(row['date'], row['hashkey'].split(';')) for _, row in hashkey.iterrows()]).reset_index()
+    df = df.rename(columns = {'index': 'hashkey', 0: 'date'})
+    df = df[df['hashkey'] != '']
+    #print(df)
+    
+    # Split the hashkey into items and quantities
+    df[['item_id', 'qty']] = df['hashkey'].str.split('*', expand=True)
+    try:
+        df['qty'] = df['qty'].astype(float)
+    except:
+        print(df['qty'].max())
+    #print(df)
+
+    # Get the total shipped each day
+    df = df.groupby(['item_id']).agg({'qty': 'sum'})
+    df.reset_index(inplace=True)
+    print(df)
+    df.to_excel('level_item_velocity.xlsx')
+
+#test6()
+
+def test7():
+    df_frame = []
+    df_pf_info = []
+    df_items = []
+
+    #generate_hashkey_ASC(r"C:\Users\David.Moreno\OneDrive - Visible SCM\Desktop\doterra_ATL_orders.csv", 'DOTERRA')
+
+    slotting(pd.Series({'client': 'MANSCAPED', 
+                        'hashkey': "hashkey/MANSCAPED_hashkey.csv", 
+                        'lol': 'TRUE', 
+                        'single': 'FALSE', 
+                        'pfs': '2,3,3;HVPnP', 
+                        'heights': '99,99,99;99,99,99', 
+                        'required': None, 
+                        'ignored': 'MANKPP2L;MANKPP2M;MANKPP2S;MANKPP2XL;MANKPP2XXL;MANKPP3L;MANKPP3M;MANKPP3S;MANKPP3XL;MANKPP3XXL;MANKPP3XXXL;MANKPP4L;MANKPP4M;MANKPP4S;MANKPP4XL;MANKPP4XXL;MANKPP4XXXL;PHP-LD;PHP-LM;PHP-LP;PHP-LR;PHP-LW;PHP-WD;PHP-WM;PHP-WP;PHP-WR'}, 
+                       index = ['client', 'hashkey', 'lol', 'single', 'pfs', 'heights', 'required', 'ignored']), 
+             df_frame, df_pf_info, df_items)
+
+    pfs_info = pd.DataFrame(df_pf_info, columns = ['Client', 'Type', 'Order', 'Percent', 'strPercent', 'Items'])
+    print(pfs_info)
+
+    columns = ['client', 'pickface', 'location', 'item_id', 'desc', 'bay', 'row', 
+                'col', 'min', 'max', 'change']
+    pfs = pd.DataFrame(df_frame, columns = columns)
+
+    items = pd.DataFrame(df_items, columns = ['Client', 'Pickface', 'Item', 'Orders', 'Quantity'])
+
+    print(pfs)
+    print(items)
+    pfs.to_excel('TEST_pfs_MANSCAPED.xlsx')
+    pfs_info.to_excel('TEST_pfs_info_MANSCAPED.xlsx')
+
+#test7()
+
+def test8():
+    df_frame = []
+    df_pf_info = []
+    df_items = []
+
+    slotting(pd.Series({'client': 'LIFEVAN', 
+                        'hashkey': 'hashkey/LIFEVAN_hashkey.xlsx', 
+                        'lol': 'TRUE', 
+                        'single': 'FALSE', 
+                        'pfs': '1,3,6', 
+                        'heights': '99,99,99', 
+                        'required': None, 
+                        'ignored': None}, 
+                       index = ['client', 'hashkey', 'lol', 'single', 'pfs', 'heights', 'required', 'ignored']), 
+             df_frame, df_pf_info, df_items)
+
+    pfs_info = pd.DataFrame(df_pf_info, columns = ['Client', 'Type', 'Order', 'Percent', 'strPercent', 'Items'])
+    print(pfs_info)
+
+    columns = ['client', 'pickface', 'location', 'item_id', 'desc', 'bay', 'row', 
+                'col', 'min', 'max', 'change']
+    pfs = pd.DataFrame(df_frame, columns = columns)
+
+    items = pd.DataFrame(df_items, columns = ['Client', 'Pickface', 'Item', 'Percent', 'Average'])
+
+    print(pfs)
+
+    with pd.ExcelWriter('TEST_LIFEVAN_pfs.xlsx') as writer:
+        pfs_info.set_index('Client')\
+            .to_excel(writer, sheet_name = 'Summary')
+        pfs.set_index('client')\
+            .to_excel(writer, sheet_name = 'PFS')
+        items.set_index('Client')\
+            .to_excel(writer, sheet_name = 'LOL & Cart')
 
 
-    # save the items into dataframes
-    df_kits = pd.DataFrame(kits, columns = ['customer', 'asc_id', 'description'])
-    df_kiq = pd.DataFrame(kiq, columns = ['customer', 'kit', 'item', 'qty'])
+def test9():
+    hashkey = load_hashkey('hashkey/LIFEVAN_hashkey.xlsx')
+    df = pd.concat([pd.Series(row['date'], row['hashkey'].split(';')) for _, row in hashkey.iterrows()]).reset_index()
+    df = df.rename(columns = {'index': 'hashkey', 0: 'date'})
+    df = df[df['hashkey'] != '']
+    #print(df)
+    
+    # Split the hashkey into items and quantities
+    df[['item_id', 'qty']] = df['hashkey'].str.split('*', expand=True)
+    try:
+        df['qty'] = df['qty'].astype(float)
+    except:
+        print(df['qty'].max())
+    #print(df)
 
-    df_kits = df_kits.set_index('customer')
-    df_kiq = df_kiq.set_index('customer')
+    # Get the total shipped each day
+    df = df.groupby(['item_id']).agg({'qty': 'sum'})
+    df.reset_index(inplace=True)
+    print(df)
+    df.to_excel('lifevan_item_velocity.xlsx')
 
-    df_kits.to_csv(f'data/ASC_Kit_SQL.csv')
-    df_kiq.to_csv(f'data/ASC_Kits_Items_SQL.csv')
 
+def test10():
+    load_hashkey('hashkey/MONAT_hashkey.xlsx')
+
+    hashkey = load_hashkey('hashkey/WALDO_hashkey.xlsx')
+
+    df = pd.concat([pd.Series(row['date'], row['hashkey'].split(';')) for _, row in hashkey.iterrows()]).reset_index()
+    df = df.rename(columns = {'index': 'hashkey', 0: 'date'})
+    df = df[df['hashkey'] != '']
+    #print(df)
+    
+    # Split the hashkey into items and quantities
+    df[['item_id', 'qty']] = df['hashkey'].str.split('*', expand=True)
+    try:
+        df['qty'] = df['qty'].astype(float)
+    except:
+        print(df['qty'].max())
+    #print(df)
+
+    # Get the total shipped each day
+    df = df.groupby(['date', 'item_id']).agg({'qty': 'sum'})
+    df.reset_index(inplace=True)
+    print(df)
+    df.to_excel('waldo_velocity.xlsx')
+
+
+def test11():
+    #generate_hashkey_ASC(r"C:\Users\David.Moreno\OneDrive - Visible SCM\Desktop\truvision_asc_orders_and_quantities.csv", client = 'TRUVISION')
+
+    hashkey = load_hashkey(client = 'TRUVISION', period = 60)
+    print(hashkey)
+    pfs = pd.read_csv(r"C:\Users\David.Moreno\OneDrive - Visible SCM\Desktop\Truvision_pfs.csv")
+    
+    pfs['pf'] = pfs.apply(lambda row: row['LOCATIONID'].split('.')[0], axis = 1)
+
+    
+    its = []
+
+    for i in pfs.pf.unique():
+        its.append(pfs[pfs.pf == i]['ITEMID'].tolist())
+
+    print(its)
+    lol = True
+
+    print('\nEvaluating pickfaces')
+    ord_sum = len(hashkey)
+
+    print('\nTotal Orders: {0:,}'.format(ord_sum))
+    by_date = (hashkey['date'].dt.date).value_counts().reset_index()\
+        .rename(columns = {'date': 'count', 'index': 'date'})\
+        .sort_values('date').set_index('date')
+
+    by_date.plot(kind = 'hist', legend = None)
+    by_date.plot(kind = 'bar', legend = None)
+    plt.show()
+    if lol:
+        hashkey = remove_lol(hashkey)
+
+    by_date = (hashkey['date'].dt.date).value_counts().reset_index()\
+        .rename(columns = {'date': 'count', 'index': 'date'})\
+        .sort_values('date').set_index('date')
+
+    by_date.plot(kind = 'hist', legend = None)
+    by_date.plot(kind = 'bar', legend = None)
+    plt.show()
+    order_count = hashkey.order_config.value_counts().to_frame()\
+        .rename(columns={'order_config': 'order_count'})
+    order_count['visited'] = False
+    print(order_count)
+
+    for i in its:
+        items = pd.DataFrame(i, columns = ['item_id'])\
+            .set_index('item_id')
+        items['orders'] = 0
+        #print(items)
+
+        
+        for index, row in order_count.iterrows():
+            if all(x in items.index.tolist() for x in index.split(';')):
+                order_count.at[index, 'visited'] = True
+                for o in index.split(';'):
+                    items.at[o, 'orders'] += row['order_count']
+                #print('')
+                #print(f'{index}: {row["order_count"]}')
+                #print(items)
+                #pass
+
+        
+        print(items)
+        ord_serv = order_count[order_count.visited].order_count.sum()
+
+        ord_per = ord_serv / ord_sum
+        print('\nOrders Served by PF: {0:,} ({1:.2%})'.format(ord_serv, 
+                                                              ord_per))
+
+        visited = list(order_count[order_count.visited == True].index)
+        if visited:
+            sub_hashkey = hashkey[hashkey.order_config.isin(visited)]
+            sub_val_count = (sub_hashkey['date'].dt.date).value_counts()
+
+            min = int(round(sub_val_count.min()))
+            q1 = int(round(np.nanpercentile(sub_val_count, 25)))
+            med = int(round(sub_val_count.median()))
+            q3 = int(round(np.nanpercentile(sub_val_count, 75)))
+            max = int(round(sub_val_count.max()))
+
+            print('\tOrders/Day:')
+            print(f'\tMin = {min:,}')
+            print(f'\t1Qt = {q1:,}')
+            print(f'\tMed = {med:,}')
+            print(f'\t3Qt = {q3:,}')
+            print(f'\tMax = {max:,}')
+
+            #by_date = sub_val_count.to_frame().reset_index().rename(columns = {'date': 'count', 'index': 'date'}).sort_values('date').set_index('date')
+            #by_date.plot(kind = 'bar', legend = None)
+            #plt.show()
+            order_count = order_count[~order_count.visited]
+
+       
+        
+
+    rem_sum = order_count.order_count.sum()
+    rem_per = rem_sum / ord_sum
+    print('\nOrders Remaining: {0:,} ({1:.2%})'.format(rem_sum, rem_per))
+
+
+def test12():
+    df_pf_info = []
+    df_frame = []
+    df_items = []
+
+    # Coding on my work computer
+    if os.path.isdir(r"C:\Users\David.Moreno\OneDrive - Visible SCM"):
+        os.chdir(r"C:\Users\David.Moreno\OneDrive - Visible SCM\Coding\DATA")
+
+    # Coding on my home computer
+    elif os.path.isdir('D:/OneDrive - Visible SCM'):
+        os.chdir('D:/OneDrive - Visible SCM/Coding/DATA')
+
+    else:
+        raise "Computer not recognized"
+
+    print('Loading all client PF info . . . ', end = '')
+
+    custs_info = pd.read_excel("truvision_analyze.xlsx",
+                                dtype = 'string')
     print('Done')
 
+    print(custs_info)
+
+    processes = []
+
+    for _, row in custs_info.iterrows():
+        slotting(row, df_frame, df_pf_info, df_items)
+
+    pfs_info = pd.DataFrame(df_pf_info, columns = ['Client', 'Type', 'Order', 
+                                                   'Percent', 'strPercent', 
+                                                   'Items'])
+    print(pfs_info)
+
+    columns = ['client', 'pickface', 'location', 'item_id', 'desc', 'bay', 'row', 
+                'col', 'min', 'max', 'change']
+    pfs = pd.DataFrame(df_frame, columns = columns)
+    pfs.location = pfs.location.astype('str')
+    print(pfs)
+
+    items = pd.DataFrame(df_items, columns = ['Client', 'Type', 'Item', 
+                                              'Orders', 'Average'])
+
+    pfs_info = pfs_info.set_index('Client')
+    pfs = pfs.set_index('client')
+    items = items.set_index('Client')
+
+    # Save this info to be loaded on the next run
+    with pd.ExcelWriter('truvision_pfs.xlsx') as writer:
+        pfs_info.to_excel(writer, sheet_name = 'Summary')
+        pfs.to_excel(writer, sheet_name = 'PFS')
+        items.to_excel(writer, sheet_name = 'LOL & Cart')
+
+#test12()
+
+def test13():
+    upload_orders(r"C:\Users\David.Moreno\OneDrive - Visible SCM\Desktop\doterra_atl_orders.txt", 'ATL', 'DOTERRA')
+    
+
+
+def test14():
+    df = pd.read_excel(r"C:\Users\David.Moreno\Downloads\Copy of Kendo_Order_SKU_Hash_20210601_ToDate_20210728.xlsx")
+    print(df)
+    print(df.dtypes)
+    df['order_config'] = df['CONCAT_SKU_LIST'].str.replace('~',';')
+    df['hashkey'] = df['CONCAT_SKU_QTY_LIST'].str.replace('~',';')
+    df['hashkey'] = df['hashkey'].str.replace('(','*')
+    df['hashkey'] = df['hashkey'].str.replace(')', '')
+    print(df[['order_config', 'hashkey']])
+    df = df.rename(columns={'SALESID':'order_number',
+                            'DATAAREAID':'client'})
+    df['order_date'] = pd.to_datetime(df['CreateDT_OO'])
+    df1 = df[['order_number','client','order_date','hashkey','order_config']].set_index('order_number')
+    print(df1)
+    df1.to_excel('Kendo_hashkey.xlsx')
+
+
+def test15():
+    fnty = pd.read_excel('Kendo_hashkey.xlsx', sheet_name='Sheet2',dtype='string')
+    fnty['date'] = pd.to_datetime(fnty['order_date'])
+    print(fnty.dtypes)
+    print(fnty)
+
+    df_frame = []
+    df_pf_info = []
+    df_items = []
+
+    #generate_hashkey_ASC(r"C:\Users\David.Moreno\OneDrive - Visible SCM\Desktop\doterra_ATL_orders.csv", 'DOTERRA')
+
+    slotting(pd.Series({'client': 'FNTY1',
+                        'warehouse': 'CIN',
+                        'hashkey': fnty, 
+                        'lol': 'FALSE', 
+                        'lol_ignore': None,
+                        'single': 'FALSE', 
+                        'single_ignore': None,
+                        'pfs': '1,5,5', 
+                        'pfs_heights': '99,99,99,99,99', 
+                        'pfs_require': None, 
+                        'pfs_ignore': None}, 
+                       index = ['client', 'warehouse','hashkey', 'lol', 'lol_ignore','single','single_ignore','pfs', 'pfs_heights', 'pfs_require', 'pfs_ignore']), 
+             df_frame, df_pf_info, df_items)
+
+    slotting(pd.Series({'client': 'FNTY2',
+                        'warehouse': 'CIN',
+                        'hashkey': fnty, 
+                        'lol': 'FALSE', 
+                        'lol_ignore': None,
+                        'single': 'FALSE', 
+                        'single_ignore': None, 
+                        'pfs': '2,5,5', 
+                        'pfs_heights': '99,99,99,99,99', 
+                        'pfs_require': None, 
+                        'pfs_ignore': None}, 
+                       index = ['client', 'warehouse','hashkey', 'lol', 'lol_ignore','single','single_ignore','pfs', 'pfs_heights', 'pfs_require', 'pfs_ignore']), 
+             df_frame, df_pf_info, df_items)
+
+    slotting(pd.Series({'client': 'FNTY3',
+                        'warehouse': 'CIN',
+                        'hashkey': fnty, 
+                        'lol': 'FALSE', 
+                        'lol_ignore': None,
+                        'single': 'FALSE', 
+                        'single_ignore': None, 
+                        'pfs': '3,5,5', 
+                        'pfs_heights': '99,99,99,99,99', 
+                        'pfs_require': None, 
+                        'pfs_ignore': None}, 
+                       index = ['client', 'warehouse','hashkey', 'lol', 'lol_ignore','single','single_ignore','pfs', 'pfs_heights', 'pfs_require', 'pfs_ignore']), 
+             df_frame, df_pf_info, df_items)
+
+    slotting(pd.Series({'client': 'FNTY4',
+                        'warehouse': 'CIN',
+                        'hashkey': fnty, 
+                        'lol': 'FALSE', 
+                        'lol_ignore': None,
+                        'single': 'FALSE', 
+                        'single_ignore': None, 
+                        'pfs': '4,5,5', 
+                        'pfs_heights': '99,99,99,99,99', 
+                        'pfs_require': None, 
+                        'pfs_ignore': None}, 
+                       index = ['client', 'warehouse','hashkey', 'lol', 'lol_ignore','single','single_ignore','pfs', 'pfs_heights', 'pfs_require', 'pfs_ignore']), 
+             df_frame, df_pf_info, df_items)
+
+    pfs_info = pd.DataFrame(df_pf_info, columns = ['Client', 'Warehosue', 'Type', 'Order', 
+                                                   'Percent', 'strPercent', 
+                                                   'Items'])
+    print(pfs_info)
+
+    columns = ['client', 'warehouse', 'pickface', 'location', 'item_id', 'desc', 'bay', 'row', 
+                'col', 'min', 'max', 'change']
+    pfs = pd.DataFrame(df_frame, columns = columns)
+    pfs.location = pfs.location.astype('str')
+    print(pfs)
+
+    items = pd.DataFrame(df_items, columns = ['Client', 'Warehouse', 'Type', 'Item', 
+                                              'Orders', 'Average'])
+
+    pfs_info = pfs_info.set_index('Client')
+    pfs = pfs.set_index('client')
+    items = items.set_index('Client')
+
+    # Save this info to be loaded on the next run
+    with pd.ExcelWriter('FNTY_pfs.xlsx') as writer:
+        pfs_info.to_excel(writer, sheet_name = 'Summary')
+        pfs.to_excel(writer, sheet_name = 'PFS')
+        items.to_excel(writer, sheet_name = 'LOL & Cart')
+
+def test16():
+    df = pd.read_csv('hashkey/DOTERRA_ATL_hashkey.csv')
+    df['len'] = df['hashkey'].map(lambda x: len(x))
+    print(df['len'].max())
+    upload_orders('hashkey/DOTERRA_ATL_hashkey.csv', 'ATL', 'DOTERRA')
+    return
+
+def linear():
+
+    df_pf_info = []
+    df_frame = []
+    df_items = []
+
+    # Coding on my work computer
+    if os.path.isdir(r"C:\Users\David.Moreno\OneDrive - Visible SCM"):
+        os.chdir(r"C:\Users\David.Moreno\OneDrive - Visible SCM\Coding\DATA")
+
+    # Coding on my home computer
+    elif os.path.isdir('D:/OneDrive - Visible SCM'):
+        os.chdir('D:/OneDrive - Visible SCM/Coding/DATA')
+
+    else:
+        raise "Computer not recognized"
+
+    test13()
+
+
+    old_pfs_info = None
+    old_pfs = None
+
+    if os.path.isfile('latest_pfs.xlsx'):
+        print('Loading prior slotting info . . . ', end = '')
+        old_pfs_info = pd.read_excel(r"latest_pfs.xlsx", 
+                                     sheet_name = 'Summary', 
+                                     index_col=[0, 1])
+        old_pfs = pd.read_excel(r"latest_pfs.xlsx", 
+                                sheet_name = 'PFS',
+                                index_col=[0, 1, 2])
+    print('Done')
+
+    print('Loading all client PF info . . . ', end = '')
+
+    custs_info = pd.read_excel("custs_info.xlsx",
+                                dtype = 'string')
+    print('Done')
+
+    print(custs_info)
+
+    processes = []
+
+    for _, row in custs_info.iterrows():
+        slotting(row, df_frame, df_pf_info, df_items, old_pfs_info, old_pfs)
+
+
+    pfs_info = pd.DataFrame(df_pf_info, columns = ['Client', 'Warehouse', 'Type', 'Order', 
+                                                   'Percent', 'strPercent', 
+                                                   'Items'])
+    print(pfs_info)
+
+    columns = ['client', 'warehouse', 'pickface', 'location', 'item_id', 'desc', 'bay', 'row', 
+                'col', 'min', 'max', 'change']
+    pfs = pd.DataFrame(df_frame, columns = columns)
+    pfs.location = pfs.location.astype('str')
+    print(pfs)
+
+    items = pd.DataFrame(df_items, columns = ['Client', 'Warehouse', 'Type', 'Item', 
+                                              'Orders', 'Average'])
+
+    pfs_info = pfs_info.set_index('Client')
+    pfs = pfs.set_index('client')
+    items = items.set_index('Client')
+
+    # Save this info to be loaded on the next run
+    with pd.ExcelWriter('latest_pfs.xlsx') as writer:
+        pfs_info.to_excel(writer, sheet_name = 'Summary')
+        pfs.to_excel(writer, sheet_name = 'PFS')
+        items.to_excel(writer, sheet_name = 'LOL & Cart')
+
+
+    # Save the last runs into the history
+    today = str(dt.date.today())
+
+    if not os.path.isdir(f'history/{today}'):
+        os.makedirs(f'history/{today}')
+        with pd.ExcelWriter(f'history/{today}/pfs.xlsx') as writer:
+            pfs_info.to_excel(writer, sheet_name = 'Summary')
+            pfs.to_excel(writer, sheet_name = 'PFS')
+            items.to_excel(writer, sheet_name = 'LOL & Cart')
+
+    # If the folder already exists, make a new one
+    else:
+        i = 1
+        while os.path.isdir(f'history/{today}({i})'):
+            i += 1
+
+        os.makedirs(f'history/{today}({i})')
+        with pd.ExcelWriter(f'history/{today}({i})/pfs.xlsx') as writer:
+            pfs_info.to_excel(writer, sheet_name = 'Summary')
+            pfs.to_excel(writer, sheet_name = 'PFS')
+            items.to_excel(writer, sheet_name = 'LOL & Cart')
+
+    return
 
 
 def main():
-    #level()
-    #level_continuous()
-    #waldo()
-    #min_max_from_hashkey('do')
-    #nuskin()
-    #epicure()
-    #truvision()   
-    #manscaped() 
-    #amare()
-    #bodyguardz()
-    #lifevan()
-    #mfgdot()
-    #young_living()
-    #pura()
-    monat()
-    #kits_from_ASC_to_SQL(r"..\..\..\Desktop\customer_kit_BOM.csv")
-    pass
+
+    m = mp.Manager()
+
+    m_df_pf_info = m.list()
+    m_df_frame = m.list()
+    m_df_items = m.list()
+
+    # Coding on my work computer
+    if os.path.isdir(r"C:\Users\David.Moreno\OneDrive - Visible SCM"):
+        os.chdir(r"C:\Users\David.Moreno\OneDrive - Visible SCM\Coding\DATA")
+
+    # Coding on my home computer
+    elif os.path.isdir('D:/OneDrive - Visible SCM'):
+        os.chdir('D:/OneDrive - Visible SCM/Coding/DATA')
+
+    else:
+        raise Exception("Computer not recognized")
+
+    #test13()
+
+    old_pfs_info = None
+    old_pfs = None
+
+    if os.path.isfile('latest_pfs.xlsx'):
+        print('Loading prior slotting info . . . ', end = '')
+        old_pfs_info = pd.read_excel(r"latest_pfs.xlsx", 
+                                     sheet_name = 'Summary', 
+                                     index_col=[0, 1, 2])
+        old_pfs = pd.read_excel(r"latest_pfs.xlsx", 
+                                sheet_name = 'PFS',
+                                index_col=[0, 1, 2, 3])
+    print('Done')
+
+    print('Loading all client PF info . . . ', end = '')
+
+    custs_info = pd.read_excel("custs_info.xlsx",
+                                dtype = 'string')
+    print('Done')
+
+    print(custs_info)
+
+    warehouses = custs_info['warehouse'].value_counts().to_frame()\
+        .rename(columns={'warehouse':'client_count'})
+    warehouses.index.names = ['warehouse']
+
+    processes = []
+
+    with mp.Pool(MAX_PROCESSORS) as pool:
+        pool.starmap(slotting, 
+                     [(row, m_df_frame, m_df_pf_info, m_df_items, old_pfs_info, 
+                       old_pfs) for _, row in custs_info.iterrows()])
+        pool.close()
 
 
+    df_frame = list(m_df_frame)
+    df_pf_info = list(m_df_pf_info)
+    df_items = list(m_df_items)
 
-main()
-#gui()
-#tk_tutorial()
+    pfs_info = pd.DataFrame(df_pf_info, 
+                            columns = ['Client', 'Warehouse', 'Type', 'Order', 
+                                       'Percent', 'strPercent', 'Items'])
+    print(pfs_info)
+
+    columns = ['client', 'warehouse', 'pickface', 'location', 'item_id', 
+               'desc', 'bay', 'row', 'col', 'min', 'max', 'change']
+    pfs = pd.DataFrame(df_frame, columns = columns)
+    pfs.location = pfs.location.astype('str')
+    print(pfs)
+
+    items = pd.DataFrame(df_items, 
+                         columns = ['Client', 'Warehouse', 'Type', 'Item', 
+                                    'Orders', 'Average'])
+
+    pfs_info = pfs_info.set_index('Client')
+    pfs = pfs.set_index('client')
+    items = items.set_index('Client')
+
+    # Save this info to be loaded on the next run
+    with pd.ExcelWriter('latest_pfs.xlsx') as writer:
+        pfs_info.to_excel(writer, sheet_name = 'Summary')
+        pfs.to_excel(writer, sheet_name = 'PFS')
+        items.to_excel(writer, sheet_name = 'LOL & Cart')
+        warehouses.to_excel(writer, sheet_name = 'Warehouse')
+
+
+    # Save the last runs into the history
+    today = str(dt.date.today())
+
+    if not os.path.isdir(f'history/{today}'):
+        os.makedirs(f'history/{today}')
+        with pd.ExcelWriter(f'history/{today}/pfs.xlsx') as writer:
+            pfs_info.to_excel(writer, sheet_name = 'Summary')
+            pfs.to_excel(writer, sheet_name = 'PFS')
+            items.to_excel(writer, sheet_name = 'LOL & Cart')
+            warehouses.to_excel(writer, sheet_name = 'Warehouse')
+
+    # If the folder already exists, make a new one
+    else:
+        i = 1
+        while os.path.isdir(f'history/{today}({i})'):
+            i += 1
+
+        os.makedirs(f'history/{today}({i})')
+        with pd.ExcelWriter(f'history/{today}({i})/pfs.xlsx') as writer:
+            pfs_info.to_excel(writer, sheet_name = 'Summary')
+            pfs.to_excel(writer, sheet_name = 'PFS')
+            items.to_excel(writer, sheet_name = 'LOL & Cart')
+            warehouses.to_excel(writer, sheet_name = 'Warehouse')
+
+
+if __name__ == "__main__":
+    linear()
+    main()
 

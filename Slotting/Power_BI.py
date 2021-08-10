@@ -176,7 +176,7 @@ import csv
 import datetime as dt
 import os
 import copy
-import threading
+import multiprocessing as mp
 import matplotlib.pyplot as plt
 
 ROWS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']
@@ -218,9 +218,24 @@ class Pickface():
         self.row_priority = []
         self.col_priority = []
 
-        for r in range(self.bay_rows - 1, -1 ,-1):
-            self.row_priority.append(r)
-        self.row_priority.append(bay_rows - 1)
+        dec = int(math.ceil(bay_rows / 2)) - 1
+        inc = dec + 1
+        dir = -1
+
+        while len(self.row_priority) < bay_rows:
+            if dir > 0:
+                self.row_priority.append(inc)
+                inc += 1
+
+            else:
+                self.row_priority.append(dec)
+                dec -= 1
+
+            dir *= -1
+
+        #for r in range(self.bay_rows - 1, -1 ,-1):
+            #self.row_priority.append(r)
+        #self.row_priority.append(bay_rows - 1)
 
         dec = int(math.ceil(bay_cols / 2)) - 1
         inc = dec + 1
@@ -289,7 +304,7 @@ class Pickface():
         print(f'Saving pickface to {filepath}... ', end = '')
 
         with open(filepath, 'w', newline='') as f:
-            writer = csv.writer(f, delimiter=',', quotechar='|')
+            writer = csv.writer(f, delimiter=',', quotechar='"')
             writer.writerow(['Date', 'Customer', 'Bays', 'Columns', 
                              'Col Priority', 'Rows', 'Row Height', 
                              'Row Priority', 'Depth'])
@@ -443,6 +458,7 @@ class Pickface():
         '''Create empty splaces for every slot in the pickface.
         
         '''
+        self.slots = []
         for b in range(self.bays):
             rows = []
             for r in range(self.bay_rows):
@@ -589,7 +605,7 @@ def split(items, num_bays):
     min_sum = min(sums)
 
     # If the difference is greater than 2%, start swapping items
-    while (max_sum - min_sum) > .02:
+    while (max_sum - min_sum) > .05:
         max_ind = sums.index(max_sum)
         min_ind = sums.index(min_sum)
         
@@ -725,9 +741,8 @@ def load_hashkey(filepath):
             config = ''
             prefix = ''
             for hash in hashes:
-                if hash != '':
-                    config += str(prefix + hash.split('*')[0])
-                    prefix = ';'
+                config += str(prefix + hash.split('*')[0])
+                prefix = ';'
 
             df.at[ind, 'order_config'] = config
 
@@ -868,7 +883,7 @@ def generate_hashkey_ASC(filepath, cust):
 
     hashkey = hashkey[hashkey['hashkey'] != '']
     hashkey = hashkey.set_index('order_number')
-    hashkey.to_csv(f'data/{cust}_hashkey.csv')
+    hashkey.to_csv(f'../../DATA/{cust}_hashkey.csv')
     print('Done')
     return hashkey
 
@@ -933,7 +948,7 @@ def min_max_from_hashkey(hashkey, case_info):
     df = pd.concat([pd.Series(row['date'], row['hashkey'].split(';')) for _, row in hashkey.iterrows()]).reset_index()
     df = df.rename(columns = {'index': 'hashkey', 0: 'date'})
     df = df[df['hashkey'] != '']
-    print(df)
+    #print(df)
     
     # Split the hashkey into items and quantities
     df[['item_id', 'qty']] = df['hashkey'].str.split('*', expand=True)
@@ -946,13 +961,13 @@ def min_max_from_hashkey(hashkey, case_info):
     # Get the total shipped each day
     df = df.groupby(['date', 'item_id']).agg({'qty': 'sum'})
     df.reset_index(inplace=True)
-    print(df)
+    #print(df)
 
     # Pivot so that day sums of all item quantities are aligned on the same row with the date
     pivot_df = df.pivot(index = 'date', columns = 'item_id', values = 'qty')
     min_max = pd.DataFrame(columns = ['item_id', '80', '90'])
     pivot_df = pivot_df.fillna(0)
-    print(pivot_df)
+    #print(pivot_df)
 
     for i in range(0, len(pivot_df.columns)):
         min_max = min_max.append({'item_id': str(pivot_df.columns[i]),
@@ -961,15 +976,21 @@ def min_max_from_hashkey(hashkey, case_info):
                                  ignore_index = True)
 
     #print(min_max)
+    tmp = min_max.set_index('item_id')
+    tmp['80'] = tmp['80'].astype(int)
+    tmp['90'] = tmp['90'].astype(int)
+    print(tmp)
+    #tmp.to_csv('MANSCAPED_MIN-MAX.csv')
+
     case_info = case_info[['case_qty']]
     min_max = min_max.set_index('item_id').join(case_info, how='left')
 
     #print(min_max)
-    min_max['min'] = min_max.apply(lambda row: to_int(np.ceil(row['80'] / row['case_qty'])) if row['case_qty'] is not None else 0, axis = 1)
-    min_max['max'] = min_max.apply(lambda row: to_int(np.ceil(row['90'] / row['case_qty'])) if row['case_qty'] is not None else 0, axis = 1)
+    min_max['min'] = min_max.apply(lambda row: to_int(np.ceil(row['80'] / row['case_qty'])) if row['case_qty'] is not None else 1, axis = 1)
+    min_max['max'] = min_max.apply(lambda row: to_int(np.ceil(row['90'] / row['case_qty'])) if row['case_qty'] is not None else 1, axis = 1)
     
     print('Done')
-    print(min_max)
+    #print(min_max)
 
     return min_max[['min', 'max']]
 
@@ -1614,11 +1635,13 @@ def pf_dim_switch(pf: str):
     elif pf == 'PnP':
         return PNP 
 
-def slotting(info, frame, pf_info):
+def slotting(info, frame, pf_info, pf_items):
 
     hashkey = load_hashkey(info['hashkey'])
 
-    lol = True if info['lol'] == 'True' else False
+    lol = True if info['lol'].upper() == 'TRUE' else False
+
+    single = True if info['single'].upper() == 'TRUE' else False
 
     pf = [pf_dim_switch(p) for p in info['pfs'].split(';')]
 
@@ -1640,11 +1663,12 @@ def slotting(info, frame, pf_info):
     ord_sum = len(hashkey)
 
     if lol:
+        lol_hashkey = pd.DataFrame().reindex_like(hashkey)
         print("\nRemoving LOL orders . . . ", end = "")
         
         by_date = hashkey.groupby('date')['hashkey'].value_counts().to_frame()
     
-        lol_items = []
+        lol_items = set()
 
         for ind, row in by_date.iterrows():
             if row['hashkey'] >= MIN_LOL_ORDERS:
@@ -1659,20 +1683,56 @@ def slotting(info, frame, pf_info):
                         tmp_items.append(item)
 
                     if sum <= MAX_LOL_ITEMS:
+                        lol_hashkey = lol_hashkey.append(hashkey[(hashkey['date'] == ind[0]) & (hashkey.hashkey == ind[1])])
                         hashkey = hashkey.drop(hashkey[(hashkey['date'] == ind[0]) & (hashkey.hashkey == ind[1])].index)
                         for i in tmp_items:
-                            if i not in lol_items:
-                                lol_items.append(i) 
+                            lol_items.add(i) 
                         
 
         #print(hashkey.groupby('date')['hashkey'].value_counts().to_frame())
         print('Done')
         print('\nTotal Orders: {0:,}'.format(ord_sum))
         print('Orders Removed: {0:,} ({1:.2%})'.format(ord_sum - len(hashkey), (ord_sum - len(hashkey)) / ord_sum))
-        print('Remaining: {0:,} ({1:.2%})'.format(len(hashkey), len(hashkey) / ord_sum))
-        lol_items.sort()
-        pf_info.append([cust, 'LOL', pf_order, (ord_sum - len(hashkey)) / ord_sum, lol_items])
+
+        lol_items = list(lol_items)
+        lol_df = lol_hashkey['hashkey'].value_counts().to_frame()
+        #print(lol_df)
+        lol_df['percent'] = lol_df.apply(lambda row: (row['hashkey'] / lol_df['hashkey'].sum()) * 100, axis = 1)
+        for ind, row in lol_df.iterrows():
+            pf_items.append([cust, 'LOL', ind, row['percent']])
+        #print(pf_items)
+        ord_per = (ord_sum - len(hashkey)) / ord_sum
+        pf_info.append([cust, 'LOL', pf_order, ord_per, f'{ord_per:.2%}', lol_items])
         pf_order += 1
+
+    if single:
+        print('\nRemoving Single-Single orders . . . ', end = '')
+        hashkey['is_single'] = False
+
+        for ind, row in hashkey.iterrows():
+            hash = row['hashkey'].split(';')
+
+            if len(hash) == 1:
+                item, qty = hash[0].split('*')
+                if qty == '1':
+                    hashkey.at[ind, 'is_single'] = True
+
+        singles = copy.deepcopy(hashkey[hashkey['is_single']])
+        hashkey = hashkey[~hashkey['is_single']]
+        hashkey = hashkey.drop(columns = ['is_single'])
+        print('Done')
+
+        sing_df = singles['order_config'].value_counts().to_frame()
+        single_items = sing_df.index.tolist()
+        sing_df['percent'] = sing_df.apply(lambda row: (row['order_config'] / sing_df['order_config'].sum()) * 100, axis = 1)
+        for ind, row in sing_df.iterrows():
+            pf_items.append([cust, 'Single', ind, row['percent']])
+
+        ord_per = len(singles) / ord_sum
+        print(f'\nSingle-Single Orders: {len(singles):,} ({ord_per:.2%})')
+        pf_info.append([cust, 'Single', pf_order, ord_per, f'{ord_per:.2%}', single_items])
+        pf_order += 1
+
 
     #print(pf_info)
     print('\nBuilding Pickfaces . . . ', end = '')
@@ -1715,7 +1775,7 @@ def slotting(info, frame, pf_info):
                 order_count = order_count.drop(ind)
                 
         print('Done')
-        print('Orders Removed: {ignore_num:,} ({ignore_num/ord_sum:.2%})')
+        print(f'Orders Removed: {ignore_num:,} ({ignore_num/ord_sum:.2%})')
 
     # loop through each pickface number and get those top X items
     for p in range(len(pf)):
@@ -1820,7 +1880,7 @@ def slotting(info, frame, pf_info):
         tmptmp = list(top[p].index)
         tmptmp.sort()
         #print(top[p])
-        pf_info.append([cust, pf_switch(top[p]), pf_order, ord_per, tmptmp])
+        pf_info.append([cust, pf_switch(top[p]), pf_order, ord_per, f'{ord_per:.2%}', tmptmp])
         pf_order += 1
 
         #print(pf_info)
@@ -1858,8 +1918,7 @@ def slotting(info, frame, pf_info):
                                       c + 1, 
                                       item.min, 
                                       item.max])
-
-    
+                            
 
     remaining = set()
     ord_per = (order_count.order_count.sum() + ignore_num) / ord_sum
@@ -1868,16 +1927,63 @@ def slotting(info, frame, pf_info):
         for i in ignored:
             remaining.add(i)
 
-    #print(order_count)
+    print(order_count)
+    remain_hashkey = hashkey[hashkey['order_config'].isin(order_count.index)]
+
+    df = pd.concat([pd.Series(row['date'], row['hashkey'].split(';')) for _, row in remain_hashkey.iterrows()]).reset_index()
+    df = df.rename(columns = {'index': 'hashkey', 0: 'date'})
+    df = df[df['hashkey'] != '']
+    #print(df)
+    
+    # Split the hashkey into items and quantities
+    df[['item_id', 'qty']] = df['hashkey'].str.split('*', expand=True)
+    try:
+        df['qty'] = df['qty'].astype(float)
+    except:
+        print(df['qty'].max())
+    #print(df)
+
+    # Get the total shipped each day
+    df = df.groupby(['date', 'item_id']).agg({'qty': 'sum'})
+    df.reset_index(inplace=True)
+    #print(df)
+
+    # Pivot so that day sums of all item quantities are aligned on the same row with the date
+    pivot_df = df.pivot(index = 'date', columns = 'item_id', values = 'qty')
+    min_max = pd.DataFrame(columns = ['item', 'mean'])
+    pivot_df = pivot_df.fillna(0)
+    #print(pivot_df)
+
+    for i in range(0, len(pivot_df.columns)):
+        min_max = min_max.append({'item': str(pivot_df.columns[i]),
+                                  'mean': int(np.ceil(pivot_df[pivot_df.columns[i]].mean()))},
+                                 ignore_index = True)
+
+    min_max = min_max.set_index('item')
+
     for ind, row in order_count.iterrows():
         for i in ind.split(';'):
             remaining.add(i)
 
     remain_list = list(remaining)
-    remain_list.sort()
-    pf_info.append([cust, 'Remaining', pf_order, ord_per, remain_list])
+    remain_df = pd.DataFrame({'item':remain_list}).set_index('item')
+    remain_df['order_count'] = 0
+    for ind, row in order_count.iterrows():
+        for i in ind.split(';'):
+            remain_df.at[i, 'order_count'] += row['order_count']
 
-def evaluate(pfs, hashkey):
+    tmp_ord_sum = remain_df['order_count'].sum()
+    remain_df['percent'] = remain_df.apply(lambda row: (row['order_count'] / tmp_ord_sum) * 100, axis = 1)
+    remain_df = remain_df.join(min_max)
+    #print(remain_df)
+    for ind, row in remain_df.iterrows():
+        pf_items.append([cust, 'Remaining', ind, row['percent'], row['mean']])
+    #print(df_items)
+    pf_info.append([cust, 'Remaining', pf_order, ord_per, f'{ord_per:.2%}', remain_list])
+
+
+
+def evaluate(pfs, hashkey:pd.DataFrame, lol:bool = False):
     '''Evaluate a pickface using a hashkey of orders.
 
     '''
@@ -1887,14 +1993,22 @@ def evaluate(pfs, hashkey):
     if type(pfs) is not list:
         pfs = [pfs]
     #hashkey = remove_lol(hashkey)
+
+    print('\nTotal Orders: {0:,}'.format(ord_sum))
+    by_date = hashkey['date'].value_counts().reset_index().rename(columns = {'date': 'count', 'index': 'date'}).sort_values('date').set_index('date')
+    by_date.plot(kind = 'hist', legend = None)
+    by_date.plot(kind = 'bar', legend = None)
+    plt.show()
+    if lol:
+        hashkey = remove_lol(hashkey)
+
+    by_date = hashkey['date'].value_counts().reset_index().rename(columns = {'date': 'count', 'index': 'date'}).sort_values('date').set_index('date')
+    by_date.plot(kind = 'hist', legend = None)
+    by_date.plot(kind = 'bar', legend = None)
+    plt.show()
     order_count = hashkey.order_config.value_counts().to_frame()\
         .rename(columns={'order_config': 'order_count'})
     order_count['visited'] = False
-
-    
-    #by_date = hashkey['date'].value_counts().reset_index().rename(columns = {'date': 'count', 'index': 'date'}).sort_values('date').set_index('date')
-    #by_date.plot(kind = 'bar', legend = None)
-    #plt.show()
 
     for pf in pfs:
         items = pf.list_items()
@@ -1907,38 +2021,50 @@ def evaluate(pfs, hashkey):
                 ord_serv += row['order_count']
                 #print(index)
 
-        print('\nTotal Orders: {0:,}'.format(ord_sum))
-        print('Orders Served by PF: {0:,}'.format(ord_serv))
         ord_per = ord_serv / ord_sum
-        print('% Orders Served: {0:.2%}'.format(ord_per))
+        print('\nOrders Served by PF: {0:,} ({1:.2%})'.format(ord_serv, ord_per))
 
         visited = list(order_count[order_count.visited == True].index)
-        sub_hashkey = hashkey[hashkey.order_config.isin(visited)]
-        sub_val_count = sub_hashkey['date'].value_counts()
+        if visited:
+            sub_hashkey = hashkey[hashkey.order_config.isin(visited)]
+            sub_val_count = sub_hashkey['date'].value_counts()
 
-        min = int(round(sub_val_count.min()))
-        q1 = int(round(np.nanpercentile(sub_val_count, 25)))
-        med = int(round(sub_val_count.median()))
-        q3 = int(round(np.nanpercentile(sub_val_count, 75)))
-        max = int(round(sub_val_count.max()))
+            min = int(round(sub_val_count.min()))
+            q1 = int(round(np.nanpercentile(sub_val_count, 25)))
+            med = int(round(sub_val_count.median()))
+            q3 = int(round(np.nanpercentile(sub_val_count, 75)))
+            max = int(round(sub_val_count.max()))
 
-        print('\tOrders/Day:')
-        print(f'\tMin = {min:,}')
-        print(f'\t1Qt = {q1:,}')
-        print(f'\tMed = {med:,}')
-        print(f'\t3Qt = {q3:,}')
-        print(f'\tMax = {max:,}')
+            print('\tOrders/Day:')
+            print(f'\tMin = {min:,}')
+            print(f'\t1Qt = {q1:,}')
+            print(f'\tMed = {med:,}')
+            print(f'\t3Qt = {q3:,}')
+            print(f'\tMax = {max:,}')
 
-        #by_date = sub_val_count.to_frame().reset_index().rename(columns = {'date': 'count', 'index': 'date'}).sort_values('date').set_index('date')
-        #by_date.plot(kind = 'bar', legend = None)
-        #plt.show()
+            #by_date = sub_val_count.to_frame().reset_index().rename(columns = {'date': 'count', 'index': 'date'}).sort_values('date').set_index('date')
+            #by_date.plot(kind = 'bar', legend = None)
+            #plt.show()
 
         order_count = order_count[~order_count.visited]
 
-def single_single_analyze(hashkey_path, **kwargs):
-    hashkey = load_hashkey(hashkey_path)
+    rem_sum = order_count.order_count.sum()
+    rem_per = rem_sum / ord_sum
+    print('\nOrders Remaining: {0:,} ({1:.2%})'.format(rem_sum, rem_per))
+
+
+
+def single_single_analyze(hashkey, **kwargs):
+    '''Check how well a single-single operation would work for a certain company
+
+    '''
+    if type(hashkey) == str:
+        hashkey = load_hashkey(hashkey)
+
     hashkey['type'] = ''
-    print(hashkey)
+    latest = hashkey['date'].max()
+    earliest = hashkey['date'].min()
+    print(f'Date Range: {earliest} -- {latest}')
 
     single_items = set()
     single_single_items = []
@@ -1990,8 +2116,7 @@ def single_single_analyze(hashkey_path, **kwargs):
 
     single_single_items = {i:single_single_items.count(i) for i in single_single_items}
 
-    single_plus = max(single_single_items, key=single_single_items.get)
-    print(f'Single-Single Item: {single_plus}')
+    single_plus = max(single_single_items, key=single_single_items.get) if not sing_sing.empty else None
     
     sing_sing['is_sing_plus'] = False
 
@@ -2013,8 +2138,10 @@ def single_single_analyze(hashkey_path, **kwargs):
     print(f'Single items: {single_items}')
     by_date = singles['date'].value_counts().to_frame().reset_index().rename(columns = {'date': 'count', 'index': 'date'}).sort_values('date').set_index('date')
     by_date.plot(kind = 'hist', legend = True, grid = True)
+    #print(by_date)
     plt.axvline(by_date['count'].median(), color='k', linestyle='dashed')
     print(f'Orders: {len(singles):,} ({len(singles)/ord_sum:.2%})')
+    print(f'Median/day: {int(by_date["count"].median()):,}')
     plt.show()
 
     print('\nSingle-Single stats:')
@@ -2023,6 +2150,7 @@ def single_single_analyze(hashkey_path, **kwargs):
     by_date.plot(kind = 'hist', legend = True, grid = True)
     plt.axvline(by_date['count'].median(), color='k', linestyle='dashed')
     print(f'Orders: {len(sing_sing):,} ({len(sing_sing)/ord_sum:.2%})')
+    print(f'Median/day: {int(by_date["count"].median()):,}')
     plt.show()
 
     hashkey = remove_lol(hashkey)
@@ -2066,8 +2194,7 @@ def single_single_analyze(hashkey_path, **kwargs):
 
     single_single_items = {i:single_single_items.count(i) for i in single_single_items}
 
-    single_plus = max(single_single_items, key=single_single_items.get)
-    print(f'Single-Single Item: {single_plus}')
+    single_plus = max(single_single_items, key=single_single_items.get) if not sing_sing.empty else None
     
     sing_sing['is_sing_plus'] = False
 
@@ -2083,14 +2210,15 @@ def single_single_analyze(hashkey_path, **kwargs):
     sing_sing = sing_sing[sing_sing['is_sing_plus']]
 
 
-    print('LOL removed')
-    print(f'Total Orders: {ord_sum}')
+    print('\nLOL removed')
+    print(f'Total Orders: {ord_sum:,}')
     print('Single stats:')
     print(f'Single items: {single_items}')
     by_date = singles['date'].value_counts().to_frame().reset_index().rename(columns = {'date': 'count', 'index': 'date'}).sort_values('date').set_index('date')
     by_date.plot(kind = 'hist', legend = True, grid = True)
     plt.axvline(by_date['count'].median(), color='k', linestyle='dashed')
     print(f'Orders: {len(singles):,} ({len(singles)/ord_sum:.2%})')
+    print(f'Median/day: {int(by_date["count"].median()):,}')
     plt.show()
 
     print('\nSingle-Single stats:')
@@ -2099,47 +2227,801 @@ def single_single_analyze(hashkey_path, **kwargs):
     by_date.plot(kind = 'hist', legend = True, grid = True)
     plt.axvline(by_date['count'].median(), color='k', linestyle='dashed')
     print(f'Orders: {len(sing_sing):,} ({len(sing_sing)/ord_sum:.2%})')
+    print(f'Median/day: {int(by_date["count"].median()):,}')
     plt.show()
 
 
 
-#single_single(r"C:\Users\David.Moreno\OneDrive - Visible SCM\Desktop\batch_1842724.csv")
+def test():
+    hashkey = load_hashkey(r"C:\Users\David.Moreno\OneDrive - Visible SCM\Coding\DATA\MANSCAPED_hashkey.csv")
+
+    frame, pf_info, pf_items = [],[],[]
+
+    lol = True
+
+    single = False
+
+    pf = [[2, 3, 3], HVPNP]
+
+    heights = [[99,99,99], [99,99,99]]
+
+    cust = 'MANSCAPED'
+
+    ignored = None
+    required = None
+    
+    print(f'client: {cust}')
+    print(f'lol: {lol}')
+    print(f'pfs: {pf}')
+    print(f'heights: {heights}')
+    pf_order = 1
+    ord_sum = len(hashkey)
+
+    if lol:
+        lol_hashkey = pd.DataFrame().reindex_like(hashkey)
+        print("\nRemoving LOL orders . . . ", end = "")
+        
+        by_date = hashkey.groupby('date')['hashkey'].value_counts().to_frame()
+    
+        lol_items = set()
+
+        for ind, row in by_date.iterrows():
+            if row['hashkey'] >= MIN_LOL_ORDERS:
+                hash = ind[1]
+                sum = 0
+                tmp_items = []
+                s_hash = hash.split(';')
+                if len(s_hash) <= MAX_LOL_LINES:
+                    for h in s_hash:
+                        item, quant = h.split('*')
+                        sum += int(quant)
+                        tmp_items.append(item)
+
+                    if sum <= MAX_LOL_ITEMS:
+                        lol_hashkey = lol_hashkey.append(hashkey[(hashkey['date'] == ind[0]) & (hashkey.hashkey == ind[1])])
+                        hashkey = hashkey.drop(hashkey[(hashkey['date'] == ind[0]) & (hashkey.hashkey == ind[1])].index)
+                        for i in tmp_items:
+                            lol_items.add(i) 
+                        
+
+        #print(hashkey.groupby('date')['hashkey'].value_counts().to_frame())
+        print('Done')
+        print('\nTotal Orders: {0:,}'.format(ord_sum))
+        print('Orders Removed: {0:,} ({1:.2%})'.format(ord_sum - len(hashkey), (ord_sum - len(hashkey)) / ord_sum))
+
+        lol_items = list(lol_items)
+        lol_df = lol_hashkey['hashkey'].value_counts().to_frame()
+        #print(lol_df)
+        lol_df['percent'] = lol_df.apply(lambda row: (row['hashkey'] / lol_df['hashkey'].sum()) * 100, axis = 1)
+        for ind, row in lol_df.iterrows():
+            pf_items.append([cust, 'LOL', ind, row['percent']])
+        #print(pf_items)
+        ord_per = (ord_sum - len(hashkey)) / ord_sum
+        pf_info.append([cust, 'LOL', pf_order, ord_per, f'{ord_per:.2%}', lol_items])
+        pf_order += 1
+
+    if single:
+        print('\nRemoving Single-Single orders . . . ', end = '')
+        hashkey['is_single'] = False
+
+        for ind, row in hashkey.iterrows():
+            hash = row['hashkey'].split(';')
+
+            if len(hash) == 1:
+                item, qty = hash[0].split('*')
+                if qty == '1':
+                    hashkey.at[ind, 'is_single'] = True
+
+        singles = copy.deepcopy(hashkey[hashkey['is_single']])
+        hashkey = hashkey[~hashkey['is_single']]
+        hashkey = hashkey.drop(columns = ['is_single'])
+        print('Done')
+
+        sing_df = singles['order_config'].value_counts().to_frame()
+        single_items = sing_df.index.tolist()
+        sing_df['percent'] = sing_df.apply(lambda row: (row['order_config'] / sing_df['order_config'].sum()) * 100, axis = 1)
+        for ind, row in sing_df.iterrows():
+            pf_items.append([cust, 'Single', ind, row['percent']])
+
+        ord_per = len(singles) / ord_sum
+        print(f'\nSingle-Single Orders: {len(singles):,} ({ord_per:.2%})')
+        pf_info.append([cust, 'Single', pf_order, ord_per, f'{ord_per:.2%}', single_items])
+        pf_order += 1
+
+    
+    #print(pf_info)
+    print('\nBuilding Pickfaces . . . ', end = '')
+
+    # Connect to DB
+    cnxn = connect_db()
+
+    #print(hashkey)
+    order_count = hashkey.order_config.value_counts().to_frame()\
+        .rename(columns={'order_config': 'order_count'})
+
+    order_count['visited'] = False
+    #print(order_count)
+    #print(len(order_count[order_count.order_count == 1]))
 
 
-#single_single_analyze(r"C:\Users\David.Moreno\OneDrive - Visible SCM\Coding\Slotting\Slotting\data\PURA_ATL_hashkey.csv",
-#                      ignore = ['1DB'])
-#single_single_analyze(r"C:\Users\David.Moreno\OneDrive - Visible SCM\Coding\Slotting\Slotting\data\pura_wj_hashkey.csv",
-#                      ignore = ['1DB'])
+    kit_orders = pd.DataFrame(columns = ['order_number', 'date', 'hashkey', 'order_config']).set_index('order_number')
+    kits = ['MANKPP2L', 'MANKPP2M', 'MANKPP2S', 'MANKPP2XL', 'MANKPP2XXL', 'MANKPP3L', 'MANKPP3M', 'MANKPP3S', 'MANKPP3XL', 'MANKPP3XXL', 'MANKPP3XXXL', 'MANKPP4L', 'MANKPP4M', 'MANKPP4S', 'MANKPP4XL', 'MANKPP4XXL', 'MANKPP4XXXL', 'PHP-LD', 'PHP-LM', 'PHP-LP', 'PHP-LR', 'PHP-LW', 'PHP-WD', 'PHP-WM', 'PHP-WP', 'PHP-WR']
+    for ind, row in order_count.iterrows():
+        if any(x in kits for x in ind.split(';')):
+            kit_orders = kit_orders.append(hashkey[hashkey.order_config == ind])
+            order_count = order_count.drop(ind)
+    print(kit_orders)
 
+
+    # Connect to DB to get item info
+    item_sql = '''SELECT i.ASC_id AS item_id, i.description, i.case_qty, i.width, i.length, i.height
+                    FROM Item AS i
+                    WHERE i.customer = ucase('{0:s}');'''.format(cust)
+
+    item_info = pd.read_sql(item_sql, cnxn).set_index('item_id')
+
+    #print(item_info)
+
+    cnxn.close()
+
+    top = []        # Store top X items for each pickface
+    pickfaces = []  # Store each pickface
+
+    backup = []     # Incomplete order configurations to use for later
+
+    ignore_num = 0
+
+    
+    # loop through each pickface number and get those top X items
+    for p in range(len(pf)):
+        slots = pf[p][2] * pf[p][1] * pf[p][0]
+        configs = 0 # Number for tracking order configurations
+        # each pickface is stored in its own dataframe
+        top.append(pd.DataFrame(columns = ['item_id', 'orders', 'order_configs']))
+        backup = []
+
+        if pf[p] == HVPNP:
+            for i in pickfaces[-1].list_items():
+                tmp = pd.DataFrame([[i, 0, []]], 
+                                    columns = ['item_id', 'orders', 'order_configs'])
+                top[p] = top[p].append(tmp, ignore_index = True)
+            print(top[p])
+
+        elif pf[p] == [1, 3, 13]:
+            for kit in kits:
+                tmp = pd.DataFrame([[kit, 0, []]], 
+                                    columns = ['item_id', 'orders', 'order_configs'])
+                top[p] = top[p].append(tmp, ignore_index = True)
+            for i in pickfaces[-1].list_items():
+                tmp = pd.DataFrame([[i, 0, []]], 
+                                    columns = ['item_id', 'orders', 'order_configs'])
+                top[p] = top[p].append(tmp, ignore_index = True)
+            print(top[p])
+            order_count = order_count.append(kit_orders['order_config'].value_counts().to_frame().rename(columns={'order_config': 'order_count'})).sort_values('order_count', ascending = False)
+            order_count.visited = False
+            print(order_count)
+
+        for ind, row in order_count.iterrows():
+            items = ind.split(';')
+
+            
+            # if there aren't enough spaces to hold the next order configuration...
+            # count the number of items missing and if they can fit in, add the config
+            # and items
+            if len(items) > (slots - len(top[p])):
+                not_in = 0
+                for i in items:
+                    if i not in list(top[p]['item_id']):
+                        not_in += 1
+
+                if not_in > (slots - len(top[p])):
+                    for i in items:
+                        backup.append([i, row['order_count']])
+
+                    continue
+
+            # track if order configuration has been accounted for
+            order_count.at[ind, 'visited'] = True
+            h2 = []
+
+            for i in items:
+
+                # add the count if the item is already in the pickface
+                if i in list(top[p]['item_id']):
+                    #print(top[p])
+                    ind_i = top[p][top[p]['item_id'] == i].index.values[0]
+                    tmp = top[p].at[ind_i, 'orders']
+
+                    top[p].at[ind_i, 'orders'] = tmp + row['order_count']
+                    top[p].at[ind_i, 'order_configs'].append((str(configs), row['order_count']))
+
+                else:
+                    tmp = pd.DataFrame([[i, row['order_count'], [(str(configs), row['order_count'])]]], 
+                                        columns = ['item_id', 'orders', 'order_configs'])
+                    top[p] = top[p].append(tmp, ignore_index = True)
+                    
+            configs += 1
+
+        print('')
+        while len(top[p].index) < slots:
+            
+            if (backup[0][0] not in list(top[p].item_id)):
+                print(f'incomplete order configuration: {backup[0][0]}')
+                tmp = pd.DataFrame([backup[0].append((str(configs), 0))], columns = ['item_id', 'orders', 'order_configs'])
+                top[p] = top[p].append(tmp, ignore_index = True)
+            backup.pop(0)
+
+            if len(backup) == 0:
+                break
+
+
+        # Calculate the percent of total orders served from the pickface
+        sum = top[p].orders.sum()
+        top[p]['percent'] = top[p].apply(lambda row: row.orders / sum, axis = 1)
+
+        top[p] = top[p].sort_values('orders', ascending = False).set_index('item_id')
+        print(f'\nTop {len(top[p])} Items:\n{top[p]}')
+        top[p] = top[p].join(item_info, how = "left")
+        #print(top[p])
+        visited = list(order_count[order_count.visited == True].index)
+        #print(visited)
+        
+        ord_serv = order_count[order_count.visited == True].order_count.sum()
+        print('\nTotal Orders: {0:,}'.format(ord_sum))
+        print('Ideal Conditions:')
+        ord_per = ord_serv / ord_sum
+        print('\t% Orders Served: {0:.2%}'.format(ord_per))
+
+        sub_hashkey = hashkey[hashkey.order_config.isin(visited)]
+        sub_val_count = sub_hashkey['date'].value_counts()
+
+        d_min = int(round(sub_val_count.min()))
+        q1 = int(round(np.nanpercentile(sub_val_count, 25)))
+        d_med = int(round(sub_val_count.median()))
+        q3 = int(round(np.nanpercentile(sub_val_count, 75)))
+        d_max = int(round(sub_val_count.max()))
+
+        print('\tOrders/Day:')
+        print(f'\tMin = {d_min:,}')
+        print(f'\t1Qt = {q1:,}')
+        print(f'\tMed = {d_med:,}')
+        print(f'\t3Qt = {q3:,}')
+        print(f'\tMax = {d_max:,}')
+        tmptmp = list(top[p].index)
+        tmptmp.sort()
+        #print(top[p])
+        pf_info.append([cust, pf_switch(top[p]), pf_order, ord_per, f'{ord_per:.2%}', tmptmp])
+        pf_order += 1
+
+        #print(pf_info)
+        min_max = min_max_from_hashkey(sub_hashkey, item_info)
+        #print(min_max)
+
+        top[p] = top[p].join(min_max, how = "left")
+
+        # Remove all the used order configurations
+        order_count = order_count[order_count.visited != True]
+
+        pickf = Pickface(pf[p][0], pf[p][1], pf[p][2], heights[p], 1, cust = cust)
+        #pickfaces.append(Pickface(pf[p][0], pf[p][1], pf[p][2], heights[p], 1, cust = cust, row_priority = prior[p]))
+        #pickf = switch_pf(pf[p], cust, 1, row_height)
+        #print(top[p])
+        pickf.populate(top[p])
+        #pickf.display()
+        #pickf.evaluate(hashkey)
+        pickf.to_csv()
+        pickfaces.append(copy.deepcopy(pickf))
+        
+        for b in range(pickf.bays):
+            for r in range(pickf.bay_rows):
+                for c in range(pickf.bay_cols):
+                    item = pickf.slots[b][r][c]
+                    #print(item)
+                    if item is not None:
+                        frame.append([cust,
+                                      pf_switch(top[p]),
+                                      f'{str(b+1).zfill(2)}.{ROWS[r]}{str(c+1).zfill(2)}',
+                                      item.id, 
+                                      item.desc,
+                                      b + 1, 
+                                      ROWS[r], 
+                                      c + 1, 
+                                      item.min, 
+                                      item.max])
+                            
+
+    order_count = order_count.append(kit_orders['order_config'].value_counts().to_frame().rename(columns={'order_config': 'order_count'})).sort_values('order_count', ascending = False)
+    order_count.visited = False
+
+    remaining = set()
+    ord_per = (order_count.order_count.sum() + ignore_num) / ord_sum
+
+    if ignored:
+        for i in ignored:
+            remaining.add(i)
+
+    print(order_count)
+
+    remain_hashkey = hashkey[hashkey['order_config'].isin(order_count.index)]
+    prev_list = pickfaces[-1].list_items()
+    print(len(prev_list))
+    print(len(remain_hashkey))
+    for ind, row in order_count.iterrows():
+        if any(x in prev_list for x in ind.split(';')):
+            remain_hashkey = remain_hashkey[remain_hashkey.order_config != ind]
+            print(len(remain_hashkey))
+
+
+    for ind, row in remain_hashkey.iterrows():
+        if any(x in prev_list for x in row['order_config'].split(';')):
+            print(row['order_config'])
+
+    df = pd.concat([pd.Series(row['date'], row['hashkey'].split(';')) for _, row in remain_hashkey.iterrows()]).reset_index()
+    df = df.rename(columns = {'index': 'hashkey', 0: 'date'})
+    df = df[df['hashkey'] != '']
+    #print(df)
+    
+    # Split the hashkey into items and quantities
+    df[['item_id', 'qty']] = df['hashkey'].str.split('*', expand=True)
+    try:
+        df['qty'] = df['qty'].astype(float)
+    except:
+        print(df['qty'].max())
+    #print(df)
+
+    # Get the total shipped each day
+    df = df.groupby(['date', 'item_id']).agg({'qty': 'sum'})
+    df.reset_index(inplace=True)
+    #print(df)
+
+    # Pivot so that day sums of all item quantities are aligned on the same row with the date
+    pivot_df = df.pivot(index = 'date', columns = 'item_id', values = 'qty')
+    min_max = pd.DataFrame(columns = ['item', 'mean'])
+    pivot_df = pivot_df.fillna(0)
+    #print(pivot_df)
+
+    for i in range(0, len(pivot_df.columns)):
+        min_max = min_max.append({'item': str(pivot_df.columns[i]),
+                                  'mean': int(np.ceil(pivot_df[pivot_df.columns[i]].mean()))},
+                                 ignore_index = True)
+
+    min_max = min_max.set_index('item')
+
+    for ind, row in order_count.iterrows():
+        for i in ind.split(';'):
+            remaining.add(i)
+
+    remain_list = list(remaining)
+    remain_df = pd.DataFrame({'item':remain_list}).set_index('item')
+    remain_df['order_count'] = 0
+    for ind, row in order_count.iterrows():
+        for i in ind.split(';'):
+            remain_df.at[i, 'order_count'] += row['order_count']
+
+    tmp_ord_sum = remain_df['order_count'].sum()
+    remain_df['percent'] = remain_df.apply(lambda row: (row['order_count'] / tmp_ord_sum) * 100, axis = 1)
+    remain_df = remain_df.join(min_max)
+    #print(remain_df)
+    for ind, row in remain_df.iterrows():
+        pf_items.append([cust, 'Remaining', ind, row['percent'], row['mean']])
+    #print(df_items)
+    pf_info.append([cust, 'Remaining', pf_order, ord_per, f'{ord_per:.2%}', remain_list])
+
+    pfs_info = pd.DataFrame(pf_info, columns = ['Client', 'Type', 'Order', 'Percent', 'strPercent', 'Items'])
+    print(pfs_info)
+
+    columns = ['client', 'pickface', 'location', 'item_id', 'desc', 'bay', 'row', 
+                'col', 'min', 'max']
+    pfs = pd.DataFrame(frame, columns = columns)
+
+    items = pd.DataFrame(pf_items, columns = ['Client', 'Pickface', 'Item', 'Percent', 'Average'])
+
+    print(pfs)
+
+    pfs_info.to_excel(r"C:\Users\David.Moreno\OneDrive - Visible SCM\Coding\Slotting\Slotting\manscaped_test\pfs_info.xlsx")
+    pfs.to_excel(r"C:\Users\David.Moreno\OneDrive - Visible SCM\Coding\Slotting\Slotting\manscaped_test\pfs.xlsx")
+    items.to_excel(r"C:\Users\David.Moreno\OneDrive - Visible SCM\Coding\Slotting\Slotting\manscaped_test\items.xlsx")
+
+test()
+
+
+def test1():
+    hashkey = load_hashkey(r"C:\Users\David.Moreno\OneDrive - Visible SCM\Coding\DATA\MANSCAPED_hashkey.csv")
+
+    pf_27 = Pickface()
+    pf_27.from_csv(r"C:\Users\David.Moreno\OneDrive - Visible SCM\Coding\Slotting\Slotting\data\MANSCAPED-27.csv")
+    evaluate([pf_27], hashkey, True)
+
+    pf_39 = Pickface()
+    pf_39.from_csv(r"C:\Users\David.Moreno\OneDrive - Visible SCM\Coding\Slotting\Slotting\data\MANSCAPED-39.csv")
+    evaluate([pf_39], hashkey, True)
+
+#test1()
+
+def test2():
+    hashkey = load_hashkey(r"C:\Users\David.Moreno\OneDrive - Visible SCM\Coding\DATA\BODYGUARDZ_hashkey.csv")
+
+    frame, pf_info, pf_items = [],[],[]
+
+    lol = False
+
+    single = False
+
+    pf = [[1, 4, 100]]
+
+    heights = [[99,99,99,99,99]]
+
+    cust = 'BODYGUARDZ'
+
+    ignored = None
+    required = None
+    
+    print(f'client: {cust}')
+    print(f'lol: {lol}')
+    print(f'pfs: {pf}')
+    print(f'heights: {heights}')
+    pf_order = 1
+    ord_sum = len(hashkey)
+
+    if lol:
+        lol_hashkey = pd.DataFrame().reindex_like(hashkey)
+        print("\nRemoving LOL orders . . . ", end = "")
+        
+        by_date = hashkey.groupby('date')['hashkey'].value_counts().to_frame()
+    
+        lol_items = set()
+
+        for ind, row in by_date.iterrows():
+            if row['hashkey'] >= MIN_LOL_ORDERS:
+                hash = ind[1]
+                sum = 0
+                tmp_items = []
+                s_hash = hash.split(';')
+                if len(s_hash) <= MAX_LOL_LINES:
+                    for h in s_hash:
+                        item, quant = h.split('*')
+                        sum += int(quant)
+                        tmp_items.append(item)
+
+                    if sum <= MAX_LOL_ITEMS:
+                        lol_hashkey = lol_hashkey.append(hashkey[(hashkey['date'] == ind[0]) & (hashkey.hashkey == ind[1])])
+                        hashkey = hashkey.drop(hashkey[(hashkey['date'] == ind[0]) & (hashkey.hashkey == ind[1])].index)
+                        for i in tmp_items:
+                            lol_items.add(i) 
+                        
+
+        #print(hashkey.groupby('date')['hashkey'].value_counts().to_frame())
+        print('Done')
+        print('\nTotal Orders: {0:,}'.format(ord_sum))
+        print('Orders Removed: {0:,} ({1:.2%})'.format(ord_sum - len(hashkey), (ord_sum - len(hashkey)) / ord_sum))
+
+        lol_items = list(lol_items)
+        lol_df = lol_hashkey['hashkey'].value_counts().to_frame()
+        #print(lol_df)
+        lol_df['percent'] = lol_df.apply(lambda row: (row['hashkey'] / lol_df['hashkey'].sum()) * 100, axis = 1)
+        for ind, row in lol_df.iterrows():
+            pf_items.append([cust, 'LOL', ind, row['percent']])
+        #print(pf_items)
+        ord_per = (ord_sum - len(hashkey)) / ord_sum
+        pf_info.append([cust, 'LOL', pf_order, ord_per, f'{ord_per:.2%}', lol_items])
+        pf_order += 1
+
+    if single:
+        print('\nRemoving Single-Single orders . . . ', end = '')
+        hashkey['is_single'] = False
+
+        for ind, row in hashkey.iterrows():
+            hash = row['hashkey'].split(';')
+
+            if len(hash) == 1:
+                item, qty = hash[0].split('*')
+                if qty == '1':
+                    hashkey.at[ind, 'is_single'] = True
+
+        singles = copy.deepcopy(hashkey[hashkey['is_single']])
+        hashkey = hashkey[~hashkey['is_single']]
+        hashkey = hashkey.drop(columns = ['is_single'])
+        print('Done')
+
+        sing_df = singles['order_config'].value_counts().to_frame()
+        single_items = sing_df.index.tolist()
+        sing_df['percent'] = sing_df.apply(lambda row: (row['order_config'] / sing_df['order_config'].sum()) * 100, axis = 1)
+        for ind, row in sing_df.iterrows():
+            pf_items.append([cust, 'Single', ind, row['percent']])
+
+        ord_per = len(singles) / ord_sum
+        print(f'\nSingle-Single Orders: {len(singles):,} ({ord_per:.2%})')
+        pf_info.append([cust, 'Single', pf_order, ord_per, f'{ord_per:.2%}', single_items])
+        pf_order += 1
+
+    
+    #print(pf_info)
+    print('\nBuilding Pickfaces . . . ', end = '')
+
+    # Connect to DB
+    cnxn = connect_db()
+
+    #print(hashkey)
+    order_count = hashkey.order_config.value_counts().to_frame()\
+        .rename(columns={'order_config': 'order_count'})
+
+    order_count['visited'] = False
+    #print(order_count)
+    #print(len(order_count[order_count.order_count == 1]))
+
+
+    # Connect to DB to get item info
+    item_sql = '''SELECT i.ASC_id AS item_id, i.description, i.case_qty, i.width, i.length, i.height
+                    FROM Item AS i
+                    WHERE i.customer = ucase('{0:s}');'''.format(cust)
+
+    item_info = pd.read_sql(item_sql, cnxn).set_index('item_id')
+
+    #print(item_info)
+
+    cnxn.close()
+
+    top = []        # Store top X items for each pickface
+    pickfaces = []  # Store each pickface
+
+    backup = []     # Incomplete order configurations to use for later
+
+    ignore_num = 0
+
+    
+    # loop through each pickface number and get those top X items
+    for p in range(len(pf)):
+        slots = pf[p][2] * pf[p][1] * pf[p][0]
+        configs = 0 # Number for tracking order configurations
+        # each pickface is stored in its own dataframe
+        top.append(pd.DataFrame(columns = ['item_id', 'orders', 'order_configs']))
+        backup = []
+
+        for ind, row in order_count.iterrows():
+            items = ind.split(';')
+
+            
+            # if there aren't enough spaces to hold the next order configuration...
+            # count the number of items missing and if they can fit in, add the config
+            # and items
+            if len(items) > (slots - len(top[p])):
+                not_in = 0
+                for i in items:
+                    if i not in list(top[p]['item_id']):
+                        not_in += 1
+
+                if not_in > (slots - len(top[p])):
+                    for i in items:
+                        backup.append([i, row['order_count']])
+
+                    continue
+
+            # track if order configuration has been accounted for
+            order_count.at[ind, 'visited'] = True
+            h2 = []
+
+            for i in items:
+
+                # add the count if the item is already in the pickface
+                if i in list(top[p]['item_id']):
+                    #print(top[p])
+                    ind_i = top[p][top[p]['item_id'] == i].index.values[0]
+                    tmp = top[p].at[ind_i, 'orders']
+
+                    top[p].at[ind_i, 'orders'] = tmp + row['order_count']
+                    top[p].at[ind_i, 'order_configs'].append((str(configs), row['order_count']))
+
+                else:
+                    tmp = pd.DataFrame([[i, row['order_count'], [(str(configs), row['order_count'])]]], 
+                                        columns = ['item_id', 'orders', 'order_configs'])
+                    top[p] = top[p].append(tmp, ignore_index = True)
+                    
+            configs += 1
+
+        print('')
+        while len(top[p].index) < slots:
+            
+            if (backup[0][0] not in list(top[p].item_id)):
+                print(f'incomplete order configuration: {backup[0][0]}')
+                tmp = pd.DataFrame([backup[0].append((str(configs), 0))], columns = ['item_id', 'orders', 'order_configs'])
+                top[p] = top[p].append(tmp, ignore_index = True)
+            backup.pop(0)
+
+            if len(backup) == 0:
+                break
+
+
+        # Calculate the percent of total orders served from the pickface
+        sum = top[p].orders.sum()
+        top[p]['percent'] = top[p].apply(lambda row: row.orders / sum, axis = 1)
+
+        top[p] = top[p].sort_values('orders', ascending = False).set_index('item_id')
+        print(f'\nTop {len(top[p])} Items:\n{top[p]}')
+        top[p] = top[p].join(item_info, how = "left")
+        #print(top[p])
+        visited = list(order_count[order_count.visited == True].index)
+        #print(visited)
+        
+        ord_serv = order_count[order_count.visited == True].order_count.sum()
+        print('\nTotal Orders: {0:,}'.format(ord_sum))
+        print('Ideal Conditions:')
+        ord_per = ord_serv / ord_sum
+        print('\t% Orders Served: {0:.2%}'.format(ord_per))
+
+        sub_hashkey = hashkey[hashkey.order_config.isin(visited)]
+        sub_val_count = sub_hashkey['date'].value_counts()
+
+        d_min = int(round(sub_val_count.min()))
+        q1 = int(round(np.nanpercentile(sub_val_count, 25)))
+        d_med = int(round(sub_val_count.median()))
+        q3 = int(round(np.nanpercentile(sub_val_count, 75)))
+        d_max = int(round(sub_val_count.max()))
+
+        print('\tOrders/Day:')
+        print(f'\tMin = {d_min:,}')
+        print(f'\t1Qt = {q1:,}')
+        print(f'\tMed = {d_med:,}')
+        print(f'\t3Qt = {q3:,}')
+        print(f'\tMax = {d_max:,}')
+        tmptmp = list(top[p].index)
+        tmptmp.sort()
+        #print(top[p])
+        pf_info.append([cust, pf_switch(top[p]), pf_order, ord_per, f'{ord_per:.2%}', tmptmp])
+        pf_order += 1
+
+        #print(pf_info)
+        min_max = min_max_from_hashkey(sub_hashkey, item_info)
+        #print(min_max)
+
+        top[p] = top[p].join(min_max, how = "left")
+
+        # Remove all the used order configurations
+        order_count = order_count[order_count.visited != True]
+
+        pickf = Pickface(pf[p][0], pf[p][1], pf[p][2], heights[p], 1, cust = cust)
+        #pickfaces.append(Pickface(pf[p][0], pf[p][1], pf[p][2], heights[p], 1, cust = cust, row_priority = prior[p]))
+        #pickf = switch_pf(pf[p], cust, 1, row_height)
+        #print(top[p])
+        pickf.populate(top[p])
+        #pickf.display()
+        #pickf.evaluate(hashkey)
+        pickf.to_csv()
+        pickfaces.append(copy.deepcopy(pickf))
+        
+        for b in range(pickf.bays):
+            for r in range(pickf.bay_rows):
+                for c in range(pickf.bay_cols):
+                    item = pickf.slots[b][r][c]
+                    #print(item)
+                    if item is not None:
+                        frame.append([cust,
+                                      pf_switch(top[p]),
+                                      f'{str(b+1).zfill(2)}.{ROWS[r]}{str(c+1).zfill(2)}',
+                                      item.id, 
+                                      item.desc,
+                                      b + 1, 
+                                      ROWS[r], 
+                                      c + 1, 
+                                      item.min, 
+                                      item.max])
+                           
+
+    remaining = set()
+    ord_per = (order_count.order_count.sum() + ignore_num) / ord_sum
+
+    if ignored:
+        for i in ignored:
+            remaining.add(i)
+
+    print(order_count)
+
+    remain_hashkey = hashkey[hashkey['order_config'].isin(order_count.index)]
+    prev_list = pickfaces[-1].list_items()
+    print(len(prev_list))
+    print(len(remain_hashkey))
+    for ind, row in order_count.iterrows():
+        if any(x in prev_list for x in ind.split(';')):
+            remain_hashkey = remain_hashkey[remain_hashkey.order_config != ind]
+            print(len(remain_hashkey))
+
+
+    for ind, row in remain_hashkey.iterrows():
+        if any(x in prev_list for x in row['order_config'].split(';')):
+            print(row['order_config'])
+
+    df = pd.concat([pd.Series(row['date'], row['hashkey'].split(';')) for _, row in remain_hashkey.iterrows()]).reset_index()
+    df = df.rename(columns = {'index': 'hashkey', 0: 'date'})
+    df = df[df['hashkey'] != '']
+    #print(df)
+    
+    # Split the hashkey into items and quantities
+    df[['item_id', 'qty']] = df['hashkey'].str.split('*', expand=True)
+    try:
+        df['qty'] = df['qty'].astype(float)
+    except:
+        print(df['qty'].max())
+    #print(df)
+
+    # Get the total shipped each day
+    df = df.groupby(['date', 'item_id']).agg({'qty': 'sum'})
+    df.reset_index(inplace=True)
+    #print(df)
+
+    # Pivot so that day sums of all item quantities are aligned on the same row with the date
+    pivot_df = df.pivot(index = 'date', columns = 'item_id', values = 'qty')
+    min_max = pd.DataFrame(columns = ['item', 'mean'])
+    pivot_df = pivot_df.fillna(0)
+    #print(pivot_df)
+
+    for i in range(0, len(pivot_df.columns)):
+        min_max = min_max.append({'item': str(pivot_df.columns[i]),
+                                  'mean': int(np.ceil(pivot_df[pivot_df.columns[i]].mean()))},
+                                 ignore_index = True)
+
+    min_max = min_max.set_index('item')
+
+    for ind, row in order_count.iterrows():
+        for i in ind.split(';'):
+            remaining.add(i)
+
+    remain_list = list(remaining)
+    remain_df = pd.DataFrame({'item':remain_list}).set_index('item')
+    remain_df['order_count'] = 0
+    for ind, row in order_count.iterrows():
+        for i in ind.split(';'):
+            remain_df.at[i, 'order_count'] += row['order_count']
+
+    tmp_ord_sum = remain_df['order_count'].sum()
+    remain_df['percent'] = remain_df.apply(lambda row: (row['order_count'] / tmp_ord_sum) * 100, axis = 1)
+    remain_df = remain_df.join(min_max)
+    #print(remain_df)
+    for ind, row in remain_df.iterrows():
+        pf_items.append([cust, 'Remaining', ind, row['percent'], row['mean']])
+    #print(df_items)
+    pf_info.append([cust, 'Remaining', pf_order, ord_per, f'{ord_per:.2%}', remain_list])
+
+    pfs_info = pd.DataFrame(pf_info, columns = ['Client', 'Type', 'Order', 'Percent', 'strPercent', 'Items'])
+    print(pfs_info)
+
+    columns = ['client', 'pickface', 'location', 'item_id', 'desc', 'bay', 'row', 
+                'col', 'min', 'max']
+    pfs = pd.DataFrame(frame, columns = columns)
+
+    items = pd.DataFrame(pf_items, columns = ['Client', 'Pickface', 'Item', 'Percent', 'Average'])
+
+    print(pfs)
+
+    pfs_info.to_excel(r"C:\Users\David.Moreno\OneDrive - Visible SCM\Coding\Slotting\Slotting\manscaped_test\pfs_info.xlsx")
+    pfs.to_excel(r"C:\Users\David.Moreno\OneDrive - Visible SCM\Coding\Slotting\Slotting\manscaped_test\pfs.xlsx")
+    items.to_excel(r"C:\Users\David.Moreno\OneDrive - Visible SCM\Coding\Slotting\Slotting\manscaped_test\items.xlsx")
+
+#test2()
+
+#generate_hashkey_ASC(r"C:\Users\David.Moreno\OneDrive - Visible SCM\Desktop\truvision_asc_orders_and_quantities.csv", 'TRUVISION')
 print('Loading all client PF info . . . ', end = '')
 
 custs_info = pd.read_excel(r"C:\Users\David.Moreno\OneDrive - Visible SCM\Coding\Slotting\Slotting\data\custs_info.xlsx",
-                           dtype = 'string')
+                            dtype = 'string')
 print('Done')
 
-df_pf_info = [] #pd.DataFrame(columns=['client','type','order','percent','items'])
+df_pf_info = []
 df_frame = []
-
+df_items = []
 
 print(custs_info)
-threads = []
+processes = []
 
 for ind, row in custs_info.iterrows():
-    slotting(row, df_frame, df_pf_info)
-    #t = threading.Thread(target = slotting, args = (row, df_frame, df_pf_info))
-    #t.start()
-    #threads.append(t)
-
-#for t in threads:
-    #t.join()
+    slotting(row, df_frame, df_pf_info, df_items)
 
 
-pfs_info = pd.DataFrame(df_pf_info, columns = ['client','type','order','percent','items'])
+pfs_info = pd.DataFrame(df_pf_info, columns = ['Client', 'Type', 'Order', 'Percent', 'strPercent', 'Items'])
 print(pfs_info)
 
 columns = ['client', 'pickface', 'location', 'item_id', 'desc', 'bay', 'row', 
-           'col', 'min', 'max']
+            'col', 'min', 'max']
 pfs = pd.DataFrame(df_frame, columns = columns)
 
-print(pfs)
+items = pd.DataFrame(df_items, columns = ['Client', 'Pickface', 'Item', 'Percent', 'Average'])
 
+print(pfs)

@@ -4,7 +4,7 @@
     <SchemaVersion>2.0</SchemaVersion>
     <ProjectGuid>f9b4b5e5-8422-48ea-af3b-b1fad7cb8184</ProjectGuid>
     <ProjectHome>.</ProjectHome>
-    <StartupFile>Power_BI.py</StartupFile>
+    <StartupFile>main.py</StartupFile>
     <SearchPath>
     </SearchPath>
     <WorkingDirectory>.</WorkingDirectory>
@@ -25,6 +25,9 @@
     <EnableUnmanagedDebugging>false</EnableUnmanagedDebugging>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="Analysis.py">
+      <SubType>Code</SubType>
+    </Compile>
     <Compile Include="Item.py" />
     <Compile Include="main.py">
       <SubType>Code</SubType>

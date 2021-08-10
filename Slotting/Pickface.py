@@ -28,17 +28,43 @@ class Pickface():
 
 
     def __init__(self, bays: int = 0, bay_rows: int = 0, bay_cols: int = 0, 
-                 row_height: list = [], depth: int = 0, slots: list = [], 
-                 cust: str = '', row_priority: list = []):
+                 row_height: list = [0], depth: int = 1, slots: list = [], 
+                 cust: str = ''):
         self.bays = bays
         self.bay_cols = bay_cols
         self.bay_rows = bay_rows
-        self.row_height = row_height
+
+        if not row_height:
+            for r in bay_rows:
+                self.row_height.append(99)
+        
+        else:
+            self.row_height = row_height
+
         self.depth = depth
         self.slots = copy.deepcopy(slots)
         self.cust = cust
-        self.row_priority = row_priority
+        self.row_priority = []
         self.col_priority = []
+
+        dec = int(math.ceil(bay_rows / 2)) - 1
+        inc = dec + 1
+        dir = -1
+
+        while len(self.row_priority) < bay_rows:
+            if dir > 0:
+                self.row_priority.append(inc)
+                inc += 1
+
+            else:
+                self.row_priority.append(dec)
+                dec -= 1
+
+            dir *= -1
+
+        #for r in range(self.bay_rows - 1, -1 ,-1):
+            #self.row_priority.append(r)
+        #self.row_priority.append(bay_rows - 1)
 
         dec = int(math.ceil(bay_cols / 2)) - 1
         inc = dec + 1
@@ -54,7 +80,7 @@ class Pickface():
                 dec -= 1
 
             dir *= -1
-        print(self.col_priority)
+        
         self.load()
 
 
@@ -99,7 +125,7 @@ class Pickface():
 
 
 
-    def to_csv(self, dir = 'data/'):
+    def to_csv(self, dir = r"C:\Users\David.Moreno\OneDrive - Visible SCM\Coding\Slotting\Slotting\data\\"):
         '''Write the pickface to a csv file.
 
         '''
@@ -107,7 +133,7 @@ class Pickface():
         print(f'Saving pickface to {filepath}... ', end = '')
 
         with open(filepath, 'w', newline='') as f:
-            writer = csv.writer(f, delimiter=',', quotechar='|')
+            writer = csv.writer(f, delimiter='^', quotechar='"')
             writer.writerow(['Date', 'Customer', 'Bays', 'Columns', 
                              'Col Priority', 'Rows', 'Row Height', 
                              'Row Priority', 'Depth'])
@@ -261,6 +287,7 @@ class Pickface():
         '''Create empty splaces for every slot in the pickface.
         
         '''
+        self.slots = []
         for b in range(self.bays):
             rows = []
             for r in range(self.bay_rows):
@@ -347,80 +374,6 @@ class Pickface():
         print(f'\tMed = {med:,}')
         print(f'\t3Qt = {q3:,}')
         print(f'\tMax = {max:,}')
-
-    
-
-class PF_9(Pickface):
-    def __init__(self, cust, depth, row_height):
-        self.cust = cust
-        self.bays = 1
-        self.bay_cols = 3
-        self.bay_rows = 3
-        self.depth = depth
-        self.row_height = row_height
-        self.slots = []
-        self.col_priority = [1, 0, 2]
-        self.row_priority = [1, 0, 2]
-
-        self.load()
-
-
-class PF_27(Pickface):
-    def __init__(self, cust, depth, row_height):
-        self.cust = cust
-        self.bays = 3
-        self.bay_cols = 3
-        self.bay_rows = 3
-        self.depth = depth
-        self.row_height = row_height
-        self.slots = []
-        self.col_priority = [1, 0, 2]
-        self.row_priority = [1, 0, 2]
-
-        self.load()
-
-
-class PF_32(Pickface):
-    def __init__(self, cust, depth, height):
-        self.cust = cust
-        self.bays = 4
-        self.bay_cols = 4
-        self.bay_rows = 2
-        self.depth = depth
-        self.row_height = height
-        self.slots = []
-        self.col_priority = [2, 1, 0, 3]
-        self.row_priority = [1, 0]
-
-        self.load()
-
-
-class PF_48(Pickface):
-    def __init__(self, cust, depth, row_height):
-        self.cust = cust
-        self.bays = 4
-        self.bay_cols = 4
-        self.bay_rows = 3
-        self.depth = depth
-        self.row_height = row_height
-        self.slots = []
-        self.col_priority = [2, 1, 0, 3]
-        self.row_priority = [1, 0, 2]
-        
-        self.load()
-
-
-class Omni(Pickface):
-    def __init__(self, cust, depth, row_height):
-        self.cust = cust
-        self.bays = 20
-        self.bay_cols = 6
-        self.bay_rows = 5
-        self.depth = depth
-        self.row_height = row_height
-        self.slots = []
-        
-        self.load()
             
            
 def split(items, num_bays):
@@ -474,16 +427,15 @@ def split(items, num_bays):
             sum += i[1]
 
         sums.append(sum)
-    #print(sums)
 
-    # Get the percent distribution of all the bays within 2% of each other
-    max_s = max(sums)
-    min_s = min(sums)
+    # Get the percent distribution of all the bays within 5% of each other
+    max_sum = max(sums)
+    min_sum = min(sums)
 
-    # If the difference is greater than 2%, start swapping items
-    while (max_s - min_s) > .02:
-        max_ind = sums.index(max_s)
-        min_ind = sums.index(min_s)
+    # If the difference is greater than 5%, start swapping items
+    while (max_sum - min_sum) > .05:
+        max_ind = sums.index(max_sum)
+        min_ind = sums.index(min_sum)
         
         swapped = False
 
@@ -514,8 +466,8 @@ def split(items, num_bays):
 
         #print(sums)
 
-        max_s = max(sums)
-        min_s = min(sums)
+        max_sum = max(sums)
+        min_sum = min(sums)
 
     # Put eskew bays into the total distribution
     if t:
