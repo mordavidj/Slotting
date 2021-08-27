@@ -8,6 +8,11 @@ from DB import connect_db
 
 
 
+MIN_LOL_ORDERS = 50
+MAX_LOL_LINES = 3
+MAX_LOL_ITEMS = 5
+
+
 def upload_orders(filepath, warehouse, client):
     print(f'\nLoading hashkey: {filepath} . . . ', end = '')
 
@@ -123,6 +128,7 @@ def upload_orders(filepath, warehouse, client):
     print('Done')
 
 
+
 def get_hashkey(warehouse:str, client:str, period:int = 42):
     if warehouse is None or warehouse is '':
         raise Exception("Warehouse must be specified.")
@@ -148,6 +154,8 @@ def get_hashkey(warehouse:str, client:str, period:int = 42):
     df = pd.read_sql(orders_sql, cnxn).set_index('order_number')
 
     return df.rename(columns = {'order_date': 'date'})
+
+
 
 def load_hashkey(filepath:str = None, warehouse:str = 'WJ', client:str = None, period:int = 42):
     '''Load a Power BI Hashkey report from a file and generate order configurations
@@ -476,26 +484,7 @@ def remove_lol(hashkey: pd.DataFrame):
     '''Filters out any orders in the hashkey that could be handled in LOL
 
     '''
-    #print("\nRemoving LOL orders . . . ", end = "")
-    #tot_ord = len(hashkey)
-    #by_date = hashkey.groupby('date')['hashkey'].value_counts().to_frame()
-    ##print(by_date)
-    #for ind, row in by_date.iterrows():
-    #    if row['hashkey'] >= MIN_LOL_ORDERS:
-    #        hash = ind[1]
-    #        sum = 0
-    #        for h in hash.split(";"):
-    #            sum += int(h.split("*")[-1])
-    #
-    #        if sum <= 10:
-    #            hashkey = hashkey.drop(hashkey[(hashkey['date'] == ind[0]) & (hashkey.hashkey == ind[1])].index)
-    #
-    ##print(hashkey.groupby('date')['hashkey'].value_counts().to_frame())
-    #print('Done')
-    #print('Total Orders: {0:,}'.format(tot_ord))
-    #print('Orders Removed: {0:,} ({1:.2%})'.format(tot_ord - len(hashkey), (tot_ord - len(hashkey)) / tot_ord))
-    #print('Remaining: {0:,} ({1:.2%})'.format(len(hashkey), len(hashkey) / tot_ord))
-
+    
     print("\nRemoving LOL orders . . . ", end = "")
         
     #lol_hashkey = copy.deepcopy(hashkey)

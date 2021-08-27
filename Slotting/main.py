@@ -19,9 +19,7 @@ POD = [1, 3, 3]
 HVPNP = [3, 3, 3]
 PNP = [4, 3, 4]
 
-MIN_LOL_ORDERS = 50
-MAX_LOL_LINES = 3
-MAX_LOL_ITEMS = 5
+
 
 ROWS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']
 
@@ -497,8 +495,34 @@ def test12():
 #test12()
 
 def test13():
-    upload_orders(r"C:\Users\David.Moreno\OneDrive - Visible SCM\Desktop\doterra_atl_orders.txt", 'ATL', 'DOTERRA')
-    
+    hashkey = get_hashkey('WJ', 'BODYGUARDZ', 100)
+    hashkey = remove_lol(hashkey)
+    print(hashkey)
+    df = pd.concat([pd.Series(row['date'], row['hashkey'].split(';'))\
+        for ind, row in hashkey.iterrows()]).reset_index()
+    print(df)
+    df = df.rename(columns = {'index': 'hashkey', 0: 'date'})
+    df = df[df['hashkey'] != '']
+    print(df)
+    # Split the hashkey into items and quantities
+    df[['item', 'qty']] = df['hashkey'].str.split('*', expand=True)
+    print(df)
+    try:
+        df['qty'] = df['qty'].astype('float')
+    except:
+        for ind, row in df.iterrows():
+            try:
+                float(row['qty'])
+            except Exception as err:
+                print(ind)
+                print(row)
+                print('')
+
+    # Get the total shipped
+    df = df.groupby('item').agg({'qty': 'sum'})
+    print(df)
+    df.to_excel('bodyguardz_velocity.xlsx')
+    return
 
 
 def test14():
